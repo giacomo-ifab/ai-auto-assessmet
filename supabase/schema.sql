@@ -73,54 +73,194 @@ create trigger answers_touch_session
   for each row execute function public.touch_session();
 
 -- ------------------------------------------------------------------- RLS
--- Il browser usa la chiave anon (pubblica per progetto): può SCRIVERE i propri
--- dati ma non LEGGERE nulla. La lettura è riservata agli utenti autenticati
--- (il facilitatore, creato a mano in Authentication → Users).
+-- Le tabelle sono CHIUSE alla chiave anon: nessuna policy per quel ruolo, né in
+-- lettura né in scrittura. Il browser scrive solo attraverso le funzioni RPC
+-- definite più sotto, che validano i dati.
+--
+-- Perché non permettere l'insert diretto: PostgREST esegue gli upsert come
+-- INSERT ... ON CONFLICT e gli update come UPDATE ... WHERE, e in entrambi i casi
+-- Postgres pretende anche una policy di SELECT. Concederla significherebbe
+-- rendere leggibili a chiunque le risposte di tutti.
+--
+-- La lettura resta riservata agli utenti autenticati (il facilitatore, creato a
+-- mano in Authentication → Users).
 
 alter table public.participants enable row level security;
 alter table public.sessions     enable row level security;
 alter table public.answers      enable row level security;
 
--- partecipanti: registrazione libera, lettura solo autenticata
+-- Policy della prima versione dello schema, se presenti: non servono più.
 drop policy if exists "participants insert anon" on public.participants;
-create policy "participants insert anon" on public.participants
-  for insert to anon, authenticated with check (true);
+drop policy if exists "sessions insert anon"     on public.sessions;
+drop policy if exists "sessions update open"     on public.sessions;
+drop policy if exists "answers insert anon"      on public.answers;
+drop policy if exists "answers update anon"      on public.answers;
 
 drop policy if exists "participants select auth" on public.participants;
 create policy "participants select auth" on public.participants
   for select to authenticated using (true);
 
--- sessioni: creazione libera; aggiornabili finché non sono concluse
-drop policy if exists "sessions insert anon" on public.sessions;
-create policy "sessions insert anon" on public.sessions
-  for insert to anon, authenticated with check (completed_at is null);
-
-drop policy if exists "sessions update open" on public.sessions;
-create policy "sessions update open" on public.sessions
-  for update to anon, authenticated using (completed_at is null);
-
 drop policy if exists "sessions select auth" on public.sessions;
 create policy "sessions select auth" on public.sessions
   for select to authenticated using (true);
-
--- risposte: insert e upsert liberi (l'id sessione è un uuid non indovinabile)
-drop policy if exists "answers insert anon" on public.answers;
-create policy "answers insert anon" on public.answers
-  for insert to anon, authenticated with check (true);
-
-drop policy if exists "answers update anon" on public.answers;
-create policy "answers update anon" on public.answers
-  for update to anon, authenticated using (true);
 
 drop policy if exists "answers select auth" on public.answers;
 create policy "answers select auth" on public.answers
   for select to authenticated using (true);
 
 grant usage on schema public to anon, authenticated;
-grant insert                on public.participants to anon, authenticated;
-grant insert, update        on public.sessions     to anon, authenticated;
-grant insert, update        on public.answers      to anon, authenticated;
+revoke insert, update, delete on public.participants from anon;
+revoke insert, update, delete on public.sessions     from anon;
+revoke insert, update, delete on public.answers      from anon;
 grant select on public.participants, public.sessions, public.answers to authenticated;
+
+-- --------------------------------------------------------- API di scrittura
+-- Funzioni SECURITY DEFINER: girano con i privilegi del proprietario, quindi
+-- scrivono sulle tabelle chiuse, ma solo dopo aver validato gli argomenti.
+
+create or replace function public.register_participant(p_first text, p_last text)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  p_first := btrim(coalesce(p_first, ''));
+  p_last  := btrim(coalesce(p_last, ''));
+
+  if char_length(p_first) < 2 or char_length(p_last) < 2 then
+    raise exception 'nome e cognome sono obbligatori (almeno due caratteri)' using errcode = '22023';
+  end if;
+
+  insert into participants (first_name, last_name)
+  values (left(p_first, 80), left(p_last, 80))
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.start_session(
+  p_participant uuid,
+  p_items       text[],
+  p_user_agent  text default null
+)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if not exists (select 1 from participants where id = p_participant) then
+    raise exception 'partecipante inesistente' using errcode = '23503';
+  end if;
+
+  if p_items is null or array_length(p_items, 1) is distinct from 12 then
+    raise exception 'la sessione deve contenere 12 item' using errcode = '22023';
+  end if;
+
+  insert into sessions (participant_id, item_ids, user_agent)
+  values (p_participant, p_items, left(coalesce(p_user_agent, ''), 300))
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+/* Una risposta per volta, salvata mentre il partecipante compila. */
+create or replace function public.save_answer(
+  p_session   uuid,
+  p_item      text,
+  p_dimension text,
+  p_value     smallint,
+  p_position  smallint default null
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from sessions where id = p_session and completed_at is null) then
+    raise exception 'sessione inesistente o già conclusa' using errcode = '22023';
+  end if;
+
+  insert into answers (session_id, item_id, dimension, value, position)
+  values (p_session, upper(btrim(p_item)), upper(btrim(p_dimension)), p_value, p_position)
+  on conflict (session_id, item_id) do update
+    set value = excluded.value,
+        position = excluded.position,
+        answered_at = now();
+end;
+$$;
+
+/* Tutte le risposte in un colpo: [{"item_id":"C1","dimension":"COMP","value":3,"position":1}, ...] */
+create or replace function public.save_answers(p_session uuid, p_answers jsonb)
+returns integer
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_count integer := 0;
+  r record;
+begin
+  if not exists (select 1 from sessions where id = p_session and completed_at is null) then
+    raise exception 'sessione inesistente o già conclusa' using errcode = '22023';
+  end if;
+
+  for r in
+    select * from jsonb_to_recordset(coalesce(p_answers, '[]'::jsonb))
+      as x(item_id text, dimension text, value smallint, "position" smallint)
+  loop
+    insert into answers (session_id, item_id, dimension, value, position)
+    values (p_session, upper(btrim(r.item_id)), upper(btrim(r.dimension)), r.value, r."position")
+    on conflict (session_id, item_id) do update
+      set value = excluded.value,
+          position = excluded.position,
+          answered_at = now();
+    v_count := v_count + 1;
+  end loop;
+
+  return v_count;
+end;
+$$;
+
+/* Chiusura: ammessa una sola volta per sessione. */
+create or replace function public.complete_session(
+  p_session   uuid,
+  p_total     smallint,
+  p_band      text,
+  p_dim_means jsonb,
+  p_alerts    text[]
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  update sessions
+     set total = p_total,
+         band = p_band,
+         dim_means = p_dim_means,
+         alerts = p_alerts,
+         completed_at = now(),
+         updated_at = now()
+   where id = p_session
+     and completed_at is null;
+
+  if not found then
+    raise exception 'sessione inesistente o già conclusa' using errcode = '22023';
+  end if;
+end;
+$$;
+
+revoke all on function public.register_participant(text, text) from public;
+revoke all on function public.start_session(uuid, text[], text) from public;
+revoke all on function public.save_answer(uuid, text, text, smallint, smallint) from public;
+revoke all on function public.save_answers(uuid, jsonb) from public;
+revoke all on function public.complete_session(uuid, smallint, text, jsonb, text[]) from public;
+
+grant execute on function public.register_participant(text, text) to anon, authenticated;
+grant execute on function public.start_session(uuid, text[], text) to anon, authenticated;
+grant execute on function public.save_answer(uuid, text, text, smallint, smallint) to anon, authenticated;
+grant execute on function public.save_answers(uuid, jsonb) to anon, authenticated;
+grant execute on function public.complete_session(uuid, smallint, text, jsonb, text[]) to anon, authenticated;
 
 -- ------------------------------------------------------- viste di comodo
 -- Per le query dalla dashboard: la pagina facilitatore calcola da sé gli

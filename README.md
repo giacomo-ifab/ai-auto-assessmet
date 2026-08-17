@@ -81,16 +81,23 @@ identica nella struttura. Tutto il resto è locale.
 Il flusso è: **registrazione** (nome e cognome) → questionario → risultati. I dati vengono scritti
 progressivamente, così restano tracciate anche le compilazioni interrotte:
 
-| Momento | Scrittura |
+| Momento | Chiamata |
 |---|---|
-| registrazione | `INSERT participants` |
-| avvio questionario | `INSERT sessions` (con gli item estratti) |
-| ogni risposta | `UPSERT answers` (debounce 800 ms, un retry) |
-| calcolo del risultato | `UPSERT answers` completo + `UPDATE sessions` (totale, fascia, medie, alert, `completed_at`) |
+| registrazione | `register_participant(nome, cognome)` → id |
+| avvio questionario | `start_session(id, item_ids)` → id sessione |
+| ogni risposta | `save_answer(...)` (debounce 800 ms, un retry) |
+| calcolo del risultato | `save_answers(...)` completo + `complete_session(totale, fascia, medie, alert)` |
 
 Tabelle: `participants`, `sessions`, `answers` (più le viste `v_sessioni_complete` e `v_medie_item`
 per le query dalla dashboard). Il client è scritto a mano su PostgREST e GoTrue: nessuna libreria,
 nessun bundler.
+
+Le scritture passano da funzioni `SECURITY DEFINER` e non da insert diretti, per due ragioni: la
+validazione sta sul server (nome e cognome non vuoti, 12 item per sessione, valori 1–4, sessione
+conclusa non più modificabile) e le tabelle possono restare completamente chiuse alla chiave
+pubblica. Un upsert diretto non funzionerebbe comunque: PostgREST lo esegue come
+`INSERT … ON CONFLICT` e Postgres pretende in quel caso anche una policy di lettura — che
+significherebbe rendere visibili a chiunque le risposte di tutti.
 
 ### Configurazione in tre passi
 
@@ -120,14 +127,15 @@ nessuna email, nessuna password per i partecipanti.
 Il modello di sicurezza è quello standard di un'app statica su Supabase:
 
 - la chiave *anon* è pubblica per definizione: sta nel JavaScript e quindi anche in questa repo.
-  Ciò che protegge i dati non è il segreto della chiave ma le policy RLS;
-- con quella chiave si può **solo scrivere**: nessun partecipante può leggere le risposte degli
-  altri. La lettura è consentita solo agli utenti autenticati (il facilitatore);
-- una sessione già conclusa (`completed_at` valorizzato) non è più modificabile;
-- il rovescio della medaglia: chi estrae la chiave dal codice può inserire righe finte o
-  sovrascrivere le risposte di una sessione ancora aperta di cui conosca l'UUID. Per un uso interno
-  è un compromesso accettabile; se servisse chiuderlo, le scritture vanno spostate dietro una Edge
-  Function con validazione lato server.
+  Ciò che protegge i dati non è il segreto della chiave ma RLS e privilegi;
+- le tre tabelle sono **chiuse** a quella chiave: nessun accesso diretto, né in lettura né in
+  scrittura. Si passa solo dalle cinque funzioni, che non restituiscono dati altrui;
+- la lettura è consentita solo agli utenti autenticati (il facilitatore);
+- una sessione conclusa non è più modificabile: `complete_session` e `save_answer` rifiutano;
+- resta possibile, per chi estragga la chiave dal codice, creare partecipanti e sessioni finte
+  (è inevitabile senza autenticazione dei partecipanti): sono dati in più, non dati letti o
+  alterati. Se diventasse un problema, il passo successivo è un CAPTCHA o un codice sessione
+  distribuito dal facilitatore.
 
 ## Personalizzazione
 

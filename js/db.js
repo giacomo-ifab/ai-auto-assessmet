@@ -89,37 +89,35 @@ window.DB = (function () {
 
   /* ------------------------------------------------------------ scritture */
 
+  // Le tabelle sono chiuse alla chiave anon: si scrive solo tramite le funzioni
+  // SECURITY DEFINER di supabase/schema.sql, che validano gli argomenti. È anche
+  // l'unico modo che funziona: upsert e update diretti richiederebbero una policy
+  // di lettura, cioè rendere visibili a tutti le risposte di tutti.
+
+  function rpc(name, args) {
+    return request('/rest/v1/rpc/' + name, { method: 'POST', body: args });
+  }
+
   function createParticipant(firstName, lastName) {
-    return track(request('/rest/v1/participants?select=id,first_name,last_name', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
-      body: [{ first_name: firstName, last_name: lastName }]
-    }).then(function (rows) { return rows && rows[0]; }));
+    return track(rpc('register_participant', { p_first: firstName, p_last: lastName })
+      .then(function (id) { return { id: id, first_name: firstName, last_name: lastName }; }));
   }
 
   function createSession(participantId, itemIds) {
-    return track(request('/rest/v1/sessions?select=id', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
-      body: [{
-        participant_id: participantId,
-        item_ids: itemIds,
-        user_agent: (navigator.userAgent || '').slice(0, 300)
-      }]
-    }).then(function (rows) { return rows && rows[0]; }));
+    return track(rpc('start_session', {
+      p_participant: participantId,
+      p_items: itemIds,
+      p_user_agent: (navigator.userAgent || '').slice(0, 300)
+    }).then(function (id) { return { id: id }; }));
   }
 
   function putAnswer(sessionId, answer) {
-    return track(request('/rest/v1/answers?on_conflict=session_id,item_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: [{
-        session_id: sessionId,
-        item_id: answer.itemId,
-        dimension: answer.dim,
-        value: answer.value,
-        position: answer.position
-      }]
+    return track(rpc('save_answer', {
+      p_session: sessionId,
+      p_item: answer.itemId,
+      p_dimension: answer.dim,
+      p_value: answer.value,
+      p_position: answer.position
     }));
   }
 
@@ -151,33 +149,22 @@ window.DB = (function () {
 
   function completeSession(sessionId, result) {
     if (!configured || !sessionId) return Promise.resolve(null);
-    return track(request('/rest/v1/sessions?id=eq.' + encodeURIComponent(sessionId), {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: {
-        total: result.total,
-        band: result.band,
-        dim_means: result.dimMeans,
-        alerts: result.alerts,
-        completed_at: new Date().toISOString()
-      }
+    return track(rpc('complete_session', {
+      p_session: sessionId,
+      p_total: result.total,
+      p_band: result.band,
+      p_dim_means: result.dimMeans,
+      p_alerts: result.alerts
     }));
   }
 
   /** Salva in blocco le risposte già date (usato prima di chiudere la sessione). */
   function saveAllAnswers(sessionId, answers) {
     if (!configured || !sessionId || !answers.length) return Promise.resolve(null);
-    return track(request('/rest/v1/answers?on_conflict=session_id,item_id', {
-      method: 'POST',
-      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: answers.map(function (a) {
-        return {
-          session_id: sessionId,
-          item_id: a.itemId,
-          dimension: a.dim,
-          value: a.value,
-          position: a.position
-        };
+    return track(rpc('save_answers', {
+      p_session: sessionId,
+      p_answers: answers.map(function (a) {
+        return { item_id: a.itemId, dimension: a.dim, value: a.value, position: a.position };
       })
     }));
   }
