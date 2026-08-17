@@ -1,8 +1,15 @@
 # Auto-assessment competenze AI
 
 Auto-assessment individuale delle competenze di intelligenza artificiale. Interfaccia in italiano,
-applicazione statica (HTML + CSS + JavaScript, nessuna dipendenza, nessun backend): si apre
-facendo doppio clic su `index.html` o pubblicandola su GitHub Pages.
+zero dipendenze esterne, due implementazioni dello stesso modello:
+
+| Versione | Come si usa | Dove gira la logica |
+|---|---|---|
+| **Statica** (`index.html`) | doppio clic sul file, oppure GitHub Pages | JavaScript nel browser, radar su canvas |
+| **Python** (`python/app.py`) | `python python/app.py` → `http://127.0.0.1:8000` | Python server-side (solo stdlib), radar in SVG |
+
+Le due versioni condividono modello, testi e CSS: scegli la statica per distribuirla via link, la
+Python se vuoi la logica sul server e nessun calcolo lato browser.
 
 ## Struttura del modello
 
@@ -57,11 +64,37 @@ visibile** durante la compilazione.
 ## File
 
 ```
-index.html        struttura delle tre viste (intro, questionario, risultati)
-css/style.css     stile (navy + accento ciano, angoli squadrati, ispirato a ifabfoundation.org)
-js/items.js       banca item, dimensioni con quote, scala, fasce di profilo
-js/app.js         estrazione, validazione, scoring, alert, radar su canvas
+index.html                  versione statica: le tre viste (intro, questionario, risultati)
+css/style.css               stile condiviso (navy + accento ciano, angoli squadrati, ispirato a ifabfoundation.org)
+js/items.js                 banca item, dimensioni con quote, scala, fasce di profilo
+js/app.js                   estrazione, validazione, scoring, alert, radar su canvas
+
+python/app.py               server HTTP (stdlib), sessioni, viste, routing
+python/items.py             stessa banca item in Python
+python/assessment.py        estrazione, scoring, alert, radar SVG
+python/test_assessment.py   37 test: banca, quote, scoring, alert, radar, flusso HTTP
 ```
+
+## Versione Python
+
+```bash
+python python/app.py                  # avvia su http://127.0.0.1:8000 e apre il browser
+python python/app.py --port 9000      # porta diversa
+python python/app.py --no-browser     # senza aprire il browser
+python -m unittest discover -s python -t python -v   # test
+```
+
+Richiede solo Python 3.12+ (usa `:has()` nel CSS e f-string annidate): nessun `pip install`.
+Differenze rispetto alla versione statica:
+
+- estrazione, validazione e scoring avvengono **sul server**; il browser riceve solo HTML e CSS
+  (un frammento di JS opzionale aggiorna il contatore delle risposte mentre compili e apre la stampa);
+- il questionario funziona anche con JavaScript disattivato, form POST classico;
+- lo stato di sessione sta in memoria, legato a un cookie `HttpOnly`, e scade dopo 6 ore di inattività;
+  il server ascolta solo su `127.0.0.1` ed è pensato per uso locale, un compilatore per volta.
+
+Modificando gli item, aggiorna **entrambi** i file (`js/items.js` e `python/items.py`): i test Python
+confrontano le due banche (item, quote, ancoraggi della scala, fasce) e falliscono se divergono.
 
 ## Dati e privacy
 
