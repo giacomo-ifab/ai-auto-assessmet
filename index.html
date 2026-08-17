@@ -26,6 +26,9 @@
     <symbol id="i-list" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
     <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><path d="M6 14h12v8H6z"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></symbol>
   </defs>
 </svg>
 
@@ -35,7 +38,16 @@
       <p class="header-eyebrow">Competenze AI · IFAB Foundation</p>
       <p class="header-title">Auto-assessment individuale</p>
     </div>
-    <span class="chip"><svg class="icon"><use href="#i-list"/></svg> 5 dimensioni · 12 item</span>
+    <div class="header-side">
+      <span class="chip" id="participant-chip" hidden>
+        <svg class="icon"><use href="#i-user"/></svg>
+        <span id="participant-name"></span>
+        <a href="#" id="change-participant" class="chip-action">cambia</a>
+      </span>
+      <a class="chip chip-link" href="facilitatore.html">
+        <svg class="icon"><use href="#i-shield"/></svg> Facilitatore
+      </a>
+    </div>
   </div>
 </header>
 
@@ -65,10 +77,19 @@
     </div>
 
     <p class="micro note-privacy">
-      <svg class="icon"><use href="#i-shield"/></svg>
+      <svg class="icon"><use href="#i-database"/></svg>
       <span>
-        Le risposte restano nel browser: non vengono inviate né salvate su alcun server.
+        Prima di iniziare ti chiediamo nome e cognome: risposte e punteggi vengono registrati sul
+        database del progetto e servono a leggere i risultati in forma aggregata.
         Tutti gli item hanno la stessa radice — <strong>«Sono in grado di…»</strong>.
+      </span>
+    </p>
+
+    <p class="micro note-offline" id="db-notice" hidden>
+      <svg class="icon"><use href="#i-cloud"/></svg>
+      <span>
+        Salvataggio su database non configurato: l'auto-assessment funziona e calcola il profilo,
+        ma nessun dato viene registrato.
       </span>
     </p>
 
@@ -76,7 +97,48 @@
       <button type="button" class="btn btn-primary btn-lg" id="btn-start">
         Inizia l'auto-assessment <svg class="icon"><use href="#i-arrow-right"/></svg>
       </button>
-      <span class="micro">5–7 minuti · nessuna registrazione</span>
+      <span class="micro">5–7 minuti · nome e cognome, nessuna password</span>
+    </div>
+  </section>
+
+  <!-- ============ REGISTRAZIONE ============ -->
+  <section id="view-register" class="view" hidden>
+    <div class="register-wrap">
+      <p class="eyebrow">Registrazione</p>
+      <h1>Come ti chiami?</h1>
+      <p class="lead">
+        Servono solo nome e cognome: identificano la tua compilazione quando i risultati
+        vengono letti in forma aggregata. Nessuna password, nessuna email.
+      </p>
+
+      <form class="card register-card" id="register-form" novalidate>
+        <div class="field">
+          <label for="first-name">Nome</label>
+          <input type="text" id="first-name" name="first-name" autocomplete="given-name"
+                 required minlength="2" maxlength="80" placeholder="Es. Giulia">
+        </div>
+        <div class="field">
+          <label for="last-name">Cognome</label>
+          <input type="text" id="last-name" name="last-name" autocomplete="family-name"
+                 required minlength="2" maxlength="80" placeholder="Es. Rossi">
+        </div>
+
+        <div class="alert alert-warn" id="register-error" role="alert" hidden></div>
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="register-submit">
+            Continua <svg class="icon"><use href="#i-arrow-right"/></svg>
+          </button>
+          <button type="button" class="btn btn-ghost" id="register-skip" hidden>
+            Procedi senza salvare
+          </button>
+        </div>
+
+        <p class="micro" id="register-note">
+          I dati vengono inviati al database del progetto (Supabase) insieme alle risposte del
+          questionario. Non vengono usati per altri fini.
+        </p>
+      </form>
     </div>
   </section>
 
@@ -95,6 +157,7 @@
           <span class="progress-count"><output id="answered-count">0</output>/12 risposte</span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <p class="save-status" id="save-status" hidden></p>
         <p class="progress-missing" id="progress-missing" hidden></p>
       </div>
     </div>
@@ -191,7 +254,10 @@
   </div>
 </footer>
 
+<script src="js/config.js"></script>
 <script src="js/items.js"></script>
+<script src="js/db.js"></script>
+<script src="js/radar.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

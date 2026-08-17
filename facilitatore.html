@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statistiche · Auto-assessment competenze AI</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+  </defs>
+</svg>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <div>
+      <p class="header-eyebrow">Competenze AI · IFAB Foundation</p>
+      <p class="header-title">Statistiche facilitatore</p>
+    </div>
+    <div class="header-side">
+      <span class="chip" id="user-chip" hidden>
+        <svg class="icon"><use href="#i-shield"/></svg>
+        <span id="user-email"></span>
+      </span>
+      <a class="chip chip-link" href="index.html">
+        <svg class="icon"><use href="#i-arrow-left"/></svg> Auto-assessment
+      </a>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ============ LOGIN ============ -->
+  <section id="view-login" class="view" hidden>
+    <div class="login-wrap">
+      <p class="eyebrow">Accesso riservato</p>
+      <h1>Statistiche di gruppo</h1>
+      <p class="lead">
+        Le risposte dei partecipanti sono leggibili solo da un account autorizzato del progetto
+        Supabase. Le credenziali si creano dalla dashboard, in Authentication → Users.
+      </p>
+
+      <form class="card login-card" id="login-form" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" autocomplete="username" required placeholder="facilitatore@ifabfoundation.org">
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" autocomplete="current-password" required>
+        </div>
+
+        <div class="alert alert-warn" id="login-error" role="alert" hidden></div>
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary" id="login-submit">
+            Entra <svg class="icon"><use href="#i-arrow-right"/></svg>
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section id="view-stats" class="view" hidden>
+    <p class="eyebrow">Esito aggregato</p>
+    <h1>Come sta andando il gruppo</h1>
+
+    <div class="actions" style="margin-bottom: 20px">
+      <button type="button" class="btn btn-ghost" id="btn-refresh">
+        <svg class="icon"><use href="#i-rotate"/></svg> Aggiorna
+      </button>
+      <button type="button" class="btn btn-ghost" id="btn-csv">
+        <svg class="icon"><use href="#i-download"/></svg> Esporta CSV
+      </button>
+      <button type="button" class="btn btn-ghost" id="btn-logout">
+        <svg class="icon"><use href="#i-logout"/></svg> Esci
+      </button>
+      <span class="micro" id="loaded-at"></span>
+    </div>
+
+    <div class="alert alert-warn" id="stats-error" role="alert" hidden></div>
+
+    <div id="stats-empty" class="empty-state" hidden>
+      Nessuna compilazione registrata finora.
+    </div>
+
+    <div id="stats-body" hidden>
+      <div class="kpi-grid" id="kpi-grid"></div>
+
+      <div class="grid-2">
+        <div class="card">
+          <h3>Medie per dimensione</h3>
+          <ul class="bars" id="dim-bars"></ul>
+          <p class="micro" id="dim-note"></p>
+        </div>
+        <div class="card">
+          <h3>Radar del gruppo</h3>
+          <div class="chart-holder">
+            <canvas id="radar" width="520" height="400" role="img"
+                    aria-label="Radar delle medie di gruppo, asse da 0 a 4"></canvas>
+          </div>
+          <p class="micro">Asse fisso 0–4, come nel profilo individuale.</p>
+        </div>
+      </div>
+
+      <div class="grid-2" style="margin-top: 16px">
+        <div class="card">
+          <h3>Distribuzione dei profili</h3>
+          <ul class="bars" id="band-bars"></ul>
+        </div>
+        <div class="card">
+          <h3>Alert rilevati</h3>
+          <ul class="bars" id="alert-bars"></ul>
+          <p class="micro">Percentuali sulle compilazioni complete.</p>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-head">
+          <h3>Item più critici</h3>
+          <span class="micro">media più bassa · minimo 2 risposte</span>
+        </div>
+        <ul class="bars" id="item-bars"></ul>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-head">
+          <h3>Compilazioni</h3>
+          <span class="micro" id="sessions-count"></span>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Partecipante</th>
+                <th scope="col">Avviata</th>
+                <th scope="col">Stato</th>
+                <th scope="col">Totale</th>
+                <th scope="col">Profilo</th>
+                <th scope="col">Alert</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p class="micro">
+      Dati letti da Supabase con un account autorizzato. La chiave pubblica dell'app permette solo
+      di scrivere: nessun partecipante può leggere le risposte degli altri.
+    </p>
+  </div>
+</footer>
+
+<script src="js/config.js"></script>
+<script src="js/items.js"></script>
+<script src="js/db.js"></script>
+<script src="js/radar.js"></script>
+<script src="js/facilitator.js"></script>
+</body>
+</html>

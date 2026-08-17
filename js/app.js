@@ -12,7 +12,8 @@
   const session = {
     items: [],            // item estratti, nell'ordine di presentazione
     answers: new Map(),   // id item -> 1..4
-    validated: false      // true dopo il primo tentativo di calcolo
+    validated: false,     // true dopo il primo tentativo di calcolo
+    dbId: null            // id della riga sessions su Supabase, null se non salvata
   };
 
   /** Punti di "Come funziona" nella intro. */
@@ -25,10 +26,23 @@
 
   const el = {
     views: {
-      intro:   document.getElementById('view-intro'),
-      quiz:    document.getElementById('view-quiz'),
-      results: document.getElementById('view-results')
+      intro:    document.getElementById('view-intro'),
+      register: document.getElementById('view-register'),
+      quiz:     document.getElementById('view-quiz'),
+      results:  document.getElementById('view-results')
     },
+    registerForm:   document.getElementById('register-form'),
+    firstName:      document.getElementById('first-name'),
+    lastName:       document.getElementById('last-name'),
+    registerError:  document.getElementById('register-error'),
+    registerSubmit: document.getElementById('register-submit'),
+    registerSkip:   document.getElementById('register-skip'),
+    registerNote:   document.getElementById('register-note'),
+    participantChip: document.getElementById('participant-chip'),
+    participantName: document.getElementById('participant-name'),
+    changeParticipant: document.getElementById('change-participant'),
+    saveStatus:  document.getElementById('save-status'),
+    dbNotice:    document.getElementById('db-notice'),
     introHow:    document.getElementById('intro-how'),
     introScale:  document.getElementById('intro-scale'),
     quizScale:   document.getElementById('quiz-scale'),
@@ -310,6 +324,7 @@
     if (uso - val >= 1) {
       out.push({
         type: 'alert-warn',
+        code: 'uso_oltre_verifica',
         icon: 'i-alert',
         title: "Usi l'AI più di quanto la verifichi",
         body: 'Uso operativo ' + fmt(uso) + ' contro Valutazione critica ' + fmt(val) +
@@ -322,6 +337,7 @@
     if (resp <= 2) {
       out.push({
         type: 'alert-danger',
+        code: 'gap_responsabilita',
         icon: 'i-shield-alert',
         title: 'Gap di conformità',
         body: 'Responsabilità ' + fmt(resp) + ' su 4. Trattamento dei dati aziendali, rischi per terzi, ' +
@@ -416,134 +432,7 @@
       el.recap.appendChild(li);
     });
 
-    drawRadar(scores.byDim);
-  }
-
-  /* ------------------------------------------------------------------ radar */
-
-  /** Radar su canvas nativo, asse fisso 0–4. */
-  function drawRadar(byDim) {
-    const canvas = el.radar;
-    const size = 520;           // larghezza: serve spazio per le etichette laterali
-    const height = 400;         // altezza ritagliata sull'ingombro reale della figura
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = size * dpr;
-    canvas.height = height * dpr;
-
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, height);
-
-    const cx = size / 2;
-    const cy = 192;
-    const R = 150;              // raggio corrispondente al valore 4
-    const MAX = 4;
-    const n = byDim.length;
-    const step = (Math.PI * 2) / n;
-    const start = -Math.PI / 2; // primo asse in alto
-
-    function point(i, value) {
-      const r = R * (value / MAX);
-      const a = start + i * step;
-      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-    }
-
-    function ring(value) {
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const p = point(i, value);
-        if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-      }
-      ctx.closePath();
-    }
-
-    // griglia: anello esterno pieno, interni tratteggiati come nei grafici dell'app IFAB
-    ctx.lineWidth = 1;
-    for (let v = 1; v <= MAX; v++) {
-      ring(v);
-      ctx.strokeStyle = '#e5e5e5';
-      ctx.setLineDash(v === MAX ? [] : [4, 4]);
-      ctx.stroke();
-    }
-    ctx.setLineDash([]);
-
-    // raggi
-    ctx.strokeStyle = '#e5e5e5';
-    for (let i = 0; i < n; i++) {
-      const p = point(i, MAX);
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
-    }
-
-    // etichette dei livelli sull'asse verticale
-    ctx.font = '11px ' + fontStack();
-    ctx.fillStyle = '#8a8a8a';
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'middle';
-    for (let v = 1; v <= MAX; v++) {
-      ctx.fillText(String(v), cx - 6, cy - R * (v / MAX));
-    }
-
-    // area del profilo
-    ctx.beginPath();
-    byDim.forEach(function (d, i) {
-      const p = point(i, d.mean);
-      if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-    });
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(27, 152, 224, 0.14)';
-    ctx.fill();
-    ctx.strokeStyle = '#1b98e0';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // vertici
-    byDim.forEach(function (d, i) {
-      const p = point(i, d.mean);
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#1b98e0';
-      ctx.fill();
-      ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    });
-
-    // etichette delle dimensioni + valore, tenute dentro il canvas
-    byDim.forEach(function (d, i) {
-      const a = start + i * step;
-      const cos = Math.cos(a);
-      const align = Math.abs(cos) < 0.25 ? 'center' : (cos > 0 ? 'left' : 'right');
-      const ly = cy + (R + 26) * Math.sin(a);
-      let lx = cx + (R + 26) * cos;
-
-      ctx.textAlign = align;
-      ctx.textBaseline = 'middle';
-
-      ctx.font = '600 13px ' + fontStack();
-      const w = ctx.measureText(d.label).width;
-      const pad = 8;
-      if (align === 'left')  lx = Math.min(lx, size - pad - w);
-      if (align === 'right') lx = Math.max(lx, pad + w);
-      if (align === 'center') lx = Math.min(Math.max(lx, pad + w / 2), size - pad - w / 2);
-
-      ctx.fillStyle = '#21344d';
-      ctx.fillText(d.label, lx, ly);
-
-      ctx.font = '11px ' + fontStack();
-      ctx.fillStyle = '#8a8a8a';
-      ctx.fillText(fmt(d.mean), lx, ly + 15);
-    });
-
-    canvas.setAttribute('aria-label',
-      'Radar delle cinque dimensioni su asse 0–4: ' +
-      byDim.map(function (d) { return d.label + ' ' + fmt(d.mean); }).join(', ') + '.');
-  }
-
-  function fontStack() {
-    return '"Geist", "Segoe UI", Arial, Helvetica, sans-serif';
+    window.AIAA_RADAR.draw(el.radar, scores.byDim);
   }
 
   /* --------------------------------------------------------------- navigazione */
@@ -553,22 +442,163 @@
     window.scrollTo({ top: 0, behavior: 'auto' });
   }
 
-  function newSession() {
+  /* ------------------------------------------------------- partecipante e DB */
+
+  const PARTICIPANT_KEY = 'aiaa_participant';
+
+  /** Partecipante corrente: { id, firstName, lastName }. id è null se il DB non è attivo. */
+  let participant = readParticipant();
+
+  function readParticipant() {
+    try {
+      const raw = localStorage.getItem(PARTICIPANT_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      return p && p.firstName && p.lastName ? p : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function storeParticipant(p) {
+    participant = p;
+    try { localStorage.setItem(PARTICIPANT_KEY, JSON.stringify(p)); } catch (e) { /* modalità privata */ }
+    renderParticipantChip();
+  }
+
+  function renderParticipantChip() {
+    const named = Boolean(participant);
+    el.participantChip.hidden = !named;
+    if (named) el.participantName.textContent = participant.firstName + ' ' + participant.lastName;
+  }
+
+  /** Stato del salvataggio mostrato nella barra del questionario. */
+  const SAVE_LABELS = {
+    off:    'Salvataggio non attivo',
+    idle:   'Pronto',
+    saving: 'Salvataggio…',
+    saved:  'Risposte salvate',
+    error:  'Risposte non salvate'
+  };
+
+  function renderSaveStatus(state) {
+    if (!el.saveStatus) return;
+    el.saveStatus.hidden = false;
+    el.saveStatus.className = 'save-status is-' + state;
+    el.saveStatus.innerHTML = '';
+    el.saveStatus.appendChild(icon(
+      state === 'saved' ? 'i-check' : (state === 'error' ? 'i-circle-alert' : 'i-cloud')
+    ));
+    el.saveStatus.appendChild(document.createElement('span')).textContent = SAVE_LABELS[state] || state;
+  }
+
+  /** Righe risposta nel formato atteso dal DB. */
+  function answerRows() {
+    const rows = [];
+    session.items.forEach(function (item, idx) {
+      if (session.answers.has(item.id)) {
+        rows.push({ itemId: item.id, dim: item.dim, value: session.answers.get(item.id), position: idx + 1 });
+      }
+    });
+    return rows;
+  }
+
+  /** Nuova compilazione: estrae gli item, azzera lo stato e apre la riga sessione sul DB. */
+  function startSession() {
     session.items = drawItems();
     session.answers.clear();
     session.validated = false;
+    session.dbId = null;
     clearValidation();
     renderItems();
+    showView('quiz');
+
+    if (!DB.configured || !participant || !participant.id) return;
+
+    DB.createSession(participant.id, session.items.map(function (it) { return it.id; }))
+      .then(function (row) {
+        if (!row) return;
+        session.dbId = row.id;
+        // Le risposte date prima che la riga esistesse vanno recuperate.
+        const pending = answerRows();
+        if (pending.length) DB.saveAllAnswers(session.dbId, pending);
+      })
+      .catch(function () { /* lo stato "non salvato" è già segnalato dal client */ });
+  }
+
+  function goToRegistration() {
+    if (participant) {
+      el.firstName.value = participant.firstName;
+      el.lastName.value = participant.lastName;
+    }
+    el.registerError.hidden = true;
+    showView('register');
+    setTimeout(function () { el.firstName.focus(); }, 50);
+  }
+
+  function registerError(message) {
+    el.registerError.hidden = false;
+    el.registerError.innerHTML = '';
+    el.registerError.appendChild(icon('i-alert'));
+    const body = document.createElement('div');
+    body.className = 'alert-body';
+    body.textContent = message;
+    el.registerError.appendChild(body);
   }
 
   /* ------------------------------------------------------------------ eventi */
+
+  el.registerForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+
+    const first = el.firstName.value.trim().replace(/\s+/g, ' ');
+    const last = el.lastName.value.trim().replace(/\s+/g, ' ');
+
+    if (first.length < 2 || last.length < 2) {
+      registerError('Inserisci nome e cognome (almeno due caratteri ciascuno).');
+      (first.length < 2 ? el.firstName : el.lastName).focus();
+      return;
+    }
+
+    el.registerError.hidden = true;
+    el.registerSubmit.disabled = true;
+
+    // Senza DB configurato la compilazione parte comunque, in locale.
+    if (!DB.configured) {
+      el.registerSubmit.disabled = false;
+      storeParticipant({ id: null, firstName: first, lastName: last });
+      startSession();
+      return;
+    }
+
+    DB.createParticipant(first, last)
+      .then(function (row) {
+        el.registerSubmit.disabled = false;
+        storeParticipant({ id: row ? row.id : null, firstName: first, lastName: last });
+        startSession();
+      })
+      .catch(function (err) {
+        el.registerSubmit.disabled = false;
+        registerError('Registrazione non salvata sul database (' + err.message +
+          '). Puoi riprovare oppure procedere: il risultato verrà comunque calcolato, ' +
+          'ma le risposte non saranno registrate.');
+        el.registerSkip.hidden = false;
+      });
+  });
+
+  el.registerSkip.addEventListener('click', function () {
+    const first = el.firstName.value.trim() || 'Partecipante';
+    const last = el.lastName.value.trim() || 'anonimo';
+    storeParticipant({ id: null, firstName: first, lastName: last });
+    startSession();
+  });
 
   el.form.addEventListener('change', function (e) {
     const input = e.target;
     if (!input.name || input.name.indexOf('q_') !== 0) return;
 
     const itemId = input.name.slice(2);
-    session.answers.set(itemId, parseInt(input.value, 10));
+    const value = parseInt(input.value, 10);
+    session.answers.set(itemId, value);
 
     // stato visivo delle opzioni dell'item
     const fieldset = input.closest('fieldset');
@@ -578,9 +608,12 @@
 
     updateProgress();
     if (session.validated) showValidation(markMissing());
-    else {
-      const li = input.closest('.item');
-      li.classList.add('is-answered');
+    else input.closest('.item').classList.add('is-answered');
+
+    if (session.dbId) {
+      const position = session.items.findIndex(function (it) { return it.id === itemId; }) + 1;
+      const item = session.items[position - 1];
+      DB.queueAnswer(session.dbId, { itemId: itemId, dim: item.dim, value: value, position: position });
     }
   });
 
@@ -599,13 +632,40 @@
     }
 
     showValidation([]);
-    renderResults(computeScores());
+    const scores = computeScores();
+    renderResults(scores);
     showView('results');
+    persistCompletion(scores);
   });
 
+  /** Chiude la sessione sul DB: risposte complete, punteggi, fascia e alert. */
+  function persistCompletion(scores) {
+    if (!session.dbId) return;
+
+    DB.flushAnswers();
+    const dimMeans = {};
+    scores.byDim.forEach(function (d) { dimMeans[d.code] = Number(d.mean.toFixed(2)); });
+
+    DB.saveAllAnswers(session.dbId, answerRows())
+      .then(function () {
+        return DB.completeSession(session.dbId, {
+          total: scores.total,
+          band: scores.band.name,
+          dimMeans: dimMeans,
+          alerts: buildAlerts(scores.byDim).map(function (a) { return a.code; })
+        });
+      })
+      .catch(function () { /* già segnalato nello stato di salvataggio */ });
+  }
+
   document.getElementById('btn-start').addEventListener('click', function () {
-    newSession();
-    showView('quiz');
+    if (participant && (participant.id || !DB.configured)) startSession();
+    else goToRegistration();
+  });
+
+  el.changeParticipant.addEventListener('click', function (e) {
+    e.preventDefault();
+    goToRegistration();
   });
 
   document.getElementById('btn-reset').addEventListener('click', function () {
@@ -620,18 +680,29 @@
   });
 
   document.getElementById('btn-new').addEventListener('click', function () {
-    newSession();
-    showView('quiz');
+    startSession();
   });
 
   document.getElementById('btn-print').addEventListener('click', function () {
     window.print();
   });
 
+
   /* ---------------------------------------------------------------- avvio */
 
   renderHowItWorks();
   renderScaleLegend(el.introScale);
   renderScaleLegend(el.quizScale);
+  renderParticipantChip();
+  DB.onStatus(renderSaveStatus);
+
+  // Senza configurazione Supabase l'app resta usabile, ma va detto chiaramente
+  // che nulla viene registrato.
+  if (!DB.configured) {
+    el.dbNotice.hidden = false;
+    el.registerNote.textContent =
+      'Salvataggio non configurato: nome, cognome e risposte restano solo in questo browser.';
+  }
+
   session.items = drawItems(); // pronta anche se si arriva al quiz senza passare dall'intro
 })();

@@ -61,19 +61,73 @@ visibile** durante la compilazione.
 ## File
 
 ```
-index.html        le tre viste (intro, questionario, risultati) e lo sprite delle icone
-css/style.css     design system: palette IFAB, card arrotondate, tipografia Geist
-js/items.js       banca item, dimensioni con quote, scala, fasce di profilo
-js/app.js         estrazione, validazione, scoring, alert, radar su canvas
+index.html            intro, registrazione, questionario, risultati + sprite delle icone
+facilitatore.html     login e statistiche di gruppo
+css/style.css         design system: palette IFAB, card arrotondate, tipografia Geist
+js/config.js          URL e chiave anon del progetto Supabase (da compilare)
+js/items.js           banca item, dimensioni con quote, scala, fasce di profilo
+js/db.js              client REST Supabase: scritture, login, letture aggregate
+js/radar.js           radar su canvas con asse fisso 0–4, condiviso fra le due pagine
+js/app.js             registrazione, estrazione, validazione, scoring, alert
+js/facilitator.js     aggregati, tabella compilazioni, export CSV
+supabase/schema.sql   tabelle, indici, trigger, policy RLS, viste
 ```
 
 Il font Geist arriva da Google Fonts; senza rete la pagina ripiega su Segoe UI / Arial e resta
 identica nella struttura. Tutto il resto è locale.
 
-## Dati e privacy
+## Salvataggio su Supabase
 
-Nessuna risposta lascia il browser: non c'è né invio a server né salvataggio persistente. Chiudere
-la pagina cancella la sessione; l'esito si conserva con «Stampa / salva PDF».
+Il flusso è: **registrazione** (nome e cognome) → questionario → risultati. I dati vengono scritti
+progressivamente, così restano tracciate anche le compilazioni interrotte:
+
+| Momento | Scrittura |
+|---|---|
+| registrazione | `INSERT participants` |
+| avvio questionario | `INSERT sessions` (con gli item estratti) |
+| ogni risposta | `UPSERT answers` (debounce 800 ms, un retry) |
+| calcolo del risultato | `UPSERT answers` completo + `UPDATE sessions` (totale, fascia, medie, alert, `completed_at`) |
+
+Tabelle: `participants`, `sessions`, `answers` (più le viste `v_sessioni_complete` e `v_medie_item`
+per le query dalla dashboard). Il client è scritto a mano su PostgREST e GoTrue: nessuna libreria,
+nessun bundler.
+
+### Configurazione in tre passi
+
+1. **Schema**: apri il SQL Editor del progetto Supabase e lancia `supabase/schema.sql`
+   (idempotente, si può rilanciare).
+2. **Chiavi**: in `js/config.js` inserisci *Project URL* e *anon public key*
+   (Project Settings → API).
+3. **Facilitatore**: Authentication → Users → *Add user* con email e password; disattiva la
+   registrazione pubblica (Providers → Email → *Allow new users to sign up* off). Quelle
+   credenziali servono per entrare in `facilitatore.html`.
+
+Senza il passo 2 l'app resta usabile: calcola il profilo e avvisa in home che nulla viene salvato.
+
+## Pagina facilitatore
+
+`facilitatore.html` chiede le credenziali Supabase e mostra gli aggregati calcolati dai dati letti
+in una sola richiesta: partecipanti, tasso di completamento, punteggio medio, medie per dimensione
+con radar di gruppo (stesso asse 0–4 del profilo individuale), distribuzione delle fasce, frequenza
+dei due alert, item con la media più bassa, elenco delle compilazioni (anche quelle in corso) ed
+export CSV.
+
+## Dati, privacy, sicurezza
+
+Vengono registrati **nome, cognome, risposte, punteggi e alert**. Nessun altro dato personale,
+nessuna email, nessuna password per i partecipanti.
+
+Il modello di sicurezza è quello standard di un'app statica su Supabase:
+
+- la chiave *anon* è pubblica per definizione: sta nel JavaScript e quindi anche in questa repo.
+  Ciò che protegge i dati non è il segreto della chiave ma le policy RLS;
+- con quella chiave si può **solo scrivere**: nessun partecipante può leggere le risposte degli
+  altri. La lettura è consentita solo agli utenti autenticati (il facilitatore);
+- una sessione già conclusa (`completed_at` valorizzato) non è più modificabile;
+- il rovescio della medaglia: chi estrae la chiave dal codice può inserire righe finte o
+  sovrascrivere le risposte di una sessione ancora aperta di cui conosca l'UUID. Per un uso interno
+  è un compromesso accettabile; se servisse chiuderlo, le scritture vanno spostate dietro una Edge
+  Function con validazione lato server.
 
 ## Personalizzazione
 
