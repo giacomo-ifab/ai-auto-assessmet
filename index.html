@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Auto-assessment competenze AI</title>
+<meta name="description" content="Auto-assessment individuale delle competenze di AI: 12 item su 5 dimensioni, punteggio, profilo e radar.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Auto-assessment competenze AI</span>
+    </div>
+    <span class="brand-tag">Valutazione individuale</span>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+
+  <!-- ============ INTRO ============ -->
+  <section id="view-intro" class="view">
+    <p class="eyebrow">Strumento di autovalutazione</p>
+    <h1>Dove sono, oggi, le mie competenze di AI</h1>
+    <p class="lead">
+      Dodici affermazioni sul tuo lavoro reale. Per ognuna indichi quanto sei in grado di farla,
+      su una scala da 1 a 4. Alla fine ottieni un punteggio complessivo, il profilo corrispondente
+      e la lettura delle cinque dimensioni che compongono la competenza.
+    </p>
+
+    <div class="grid-2">
+      <div class="card">
+        <h2>Come funziona</h2>
+        <ul class="ticks">
+          <li>12 item estratti casualmente da una banca di 30.</li>
+          <li>Nessuna risposta giusta o sbagliata: si misura la padronanza dichiarata.</li>
+          <li>5–7 minuti. Il calcolo parte solo quando tutte le risposte sono complete.</li>
+          <li>Ogni nuova sessione propone una selezione diversa di item.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>La scala</h2>
+        <ol class="scale-legend" id="intro-scale"></ol>
+        <p class="micro">
+          Tutti gli item hanno la stessa radice: <strong>«Sono in grado di…»</strong>
+        </p>
+      </div>
+    </div>
+
+    <p class="micro note-privacy">
+      Le risposte restano nel browser: non vengono inviate né salvate su alcun server.
+    </p>
+
+    <button type="button" class="btn btn-primary btn-lg" id="btn-start">Inizia l'auto-assessment</button>
+  </section>
+
+  <!-- ============ QUESTIONARIO ============ -->
+  <section id="view-quiz" class="view" hidden>
+    <p class="eyebrow">Questionario · 12 item</p>
+    <h1>Sono in grado di…</h1>
+    <p class="lead lead-tight">
+      Valuta ogni affermazione pensando al tuo lavoro attuale, non a quello che potresti fare in teoria.
+    </p>
+
+    <div class="sticky-bar">
+      <ol class="scale-legend scale-legend-inline" id="quiz-scale"></ol>
+      <div class="progress-block">
+        <div class="progress-row">
+          <span class="progress-label">Risposte</span>
+          <span class="progress-count"><output id="answered-count">0</output>/12</span>
+        </div>
+        <div class="progress-track" role="presentation"><div class="progress-fill" id="progress-fill"></div></div>
+        <p class="progress-missing" id="progress-missing" hidden></p>
+      </div>
+    </div>
+
+    <form id="quiz-form" novalidate>
+      <ol class="item-list" id="item-list"></ol>
+
+      <div class="form-footer">
+        <div id="validation-msg" class="alert alert-warn" role="alert" hidden></div>
+        <div class="actions">
+          <button type="submit" class="btn btn-primary btn-lg">Calcola il risultato</button>
+          <button type="button" class="btn btn-ghost" id="btn-reset">Azzera le risposte</button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <!-- ============ RISULTATI ============ -->
+  <section id="view-results" class="view" hidden>
+    <p class="eyebrow">Esito</p>
+    <h1>Il tuo profilo</h1>
+
+    <div class="score-hero">
+      <div class="score-figure">
+        <span class="score-value" id="total-score">—</span>
+        <span class="score-scale">su 48 <span class="micro">(min 12)</span></span>
+      </div>
+      <div class="score-band">
+        <p class="band-name" id="band-name">—</p>
+        <p class="band-reading" id="band-reading"></p>
+        <p class="band-priority" id="band-priority"></p>
+      </div>
+    </div>
+
+    <div id="alerts" class="alerts"></div>
+
+    <div class="grid-2 grid-results">
+      <div class="card">
+        <h2>Le cinque dimensioni</h2>
+        <table class="dim-table">
+          <caption class="sr-only">Media e percentuale sul massimo per ciascuna dimensione</caption>
+          <thead>
+            <tr><th scope="col">Dimensione</th><th scope="col">Media (1–4)</th><th scope="col">% sul max</th></tr>
+          </thead>
+          <tbody id="dim-tbody"></tbody>
+        </table>
+        <p class="micro" id="dim-extremes"></p>
+      </div>
+      <div class="card">
+        <h2>Radar del profilo</h2>
+        <div class="chart-holder">
+          <canvas id="radar" width="520" height="520" role="img"
+                  aria-label="Radar delle cinque dimensioni, asse da 0 a 4"></canvas>
+        </div>
+        <p class="micro">Asse fisso 0–4: la forma è confrontabile fra profili diversi.</p>
+      </div>
+    </div>
+
+    <details class="detail-answers">
+      <summary>Rivedi le risposte di questa sessione</summary>
+      <ol class="recap-list" id="recap-list"></ol>
+    </details>
+
+    <div class="actions actions-end">
+      <button type="button" class="btn btn-primary" id="btn-print">Stampa / salva PDF</button>
+      <button type="button" class="btn btn-outline" id="btn-back">Torna alle risposte</button>
+      <button type="button" class="btn btn-ghost" id="btn-new">Nuova sessione</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p class="micro">
+      Auto-assessment competenze AI · 5 dimensioni, banca di 30 item, 12 per sessione.
+      Le soglie di alert richiamano l'obbligo di alfabetizzazione AI previsto dall'art. 4 del Regolamento UE 2024/1689 (AI Act).
+    </p>
+  </div>
+</footer>
+
+<script src="js/items.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
