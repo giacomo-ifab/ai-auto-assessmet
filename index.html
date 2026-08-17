@@ -5,17 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Auto-assessment competenze AI</title>
 <meta name="description" content="Auto-assessment individuale delle competenze di AI: 12 item su 5 dimensioni, punteggio, profilo e radar.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
+<!-- Icone (lucide) usate via <use>: nessuna dipendenza esterna -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+    <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-circle-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></symbol>
+    <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><path d="M6 14h12v8H6z"/></symbol>
+    <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  </defs>
+</svg>
+
 <header class="site-header">
   <div class="wrap header-inner">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true"></span>
-      <span class="brand-name">Auto-assessment competenze AI</span>
+    <div>
+      <p class="header-eyebrow">Competenze AI · IFAB Foundation</p>
+      <p class="header-title">Auto-assessment individuale</p>
     </div>
-    <span class="brand-tag">Valutazione individuale</span>
+    <span class="chip"><svg class="icon"><use href="#i-list"/></svg> 5 dimensioni · 12 item</span>
   </div>
 </header>
 
@@ -23,38 +43,41 @@
 
   <!-- ============ INTRO ============ -->
   <section id="view-intro" class="view">
-    <p class="eyebrow">Strumento di autovalutazione</p>
-    <h1>Dove sono, oggi, le mie competenze di AI</h1>
-    <p class="lead">
-      Dodici affermazioni sul tuo lavoro reale. Per ognuna indichi quanto sei in grado di farla,
-      su una scala da 1 a 4. Alla fine ottieni un punteggio complessivo, il profilo corrispondente
-      e la lettura delle cinque dimensioni che compongono la competenza.
-    </p>
+    <div class="intro-hero">
+      <p class="eyebrow">Strumento di autovalutazione</p>
+      <h1>Dove sono, oggi, le mie competenze di AI</h1>
+      <p class="lead">
+        Dodici affermazioni sul tuo lavoro reale. Per ognuna indichi quanto sei in grado di farla,
+        su una scala da 1 a 4. Alla fine ottieni un punteggio complessivo, il profilo corrispondente
+        e la lettura delle cinque dimensioni che compongono la competenza.
+      </p>
+    </div>
 
     <div class="grid-2">
       <div class="card">
         <h2>Come funziona</h2>
-        <ul class="ticks">
-          <li>12 item estratti casualmente da una banca di 30.</li>
-          <li>Nessuna risposta giusta o sbagliata: si misura la padronanza dichiarata.</li>
-          <li>5–7 minuti. Il calcolo parte solo quando tutte le risposte sono complete.</li>
-          <li>Ogni nuova sessione propone una selezione diversa di item.</li>
-        </ul>
+        <ul class="ticks" id="intro-how"></ul>
       </div>
       <div class="card">
         <h2>La scala</h2>
         <ol class="scale-legend" id="intro-scale"></ol>
-        <p class="micro">
-          Tutti gli item hanno la stessa radice: <strong>«Sono in grado di…»</strong>
-        </p>
       </div>
     </div>
 
     <p class="micro note-privacy">
-      Le risposte restano nel browser: non vengono inviate né salvate su alcun server.
+      <svg class="icon"><use href="#i-shield"/></svg>
+      <span>
+        Le risposte restano nel browser: non vengono inviate né salvate su alcun server.
+        Tutti gli item hanno la stessa radice — <strong>«Sono in grado di…»</strong>.
+      </span>
     </p>
 
-    <button type="button" class="btn btn-primary btn-lg" id="btn-start">Inizia l'auto-assessment</button>
+    <div class="intro-actions">
+      <button type="button" class="btn btn-primary btn-lg" id="btn-start">
+        Inizia l'auto-assessment <svg class="icon"><use href="#i-arrow-right"/></svg>
+      </button>
+      <span class="micro">5–7 minuti · nessuna registrazione</span>
+    </div>
   </section>
 
   <!-- ============ QUESTIONARIO ============ -->
@@ -69,10 +92,9 @@
       <ol class="scale-legend scale-legend-inline" id="quiz-scale"></ol>
       <div class="progress-block">
         <div class="progress-row">
-          <span class="progress-label">Risposte</span>
-          <span class="progress-count"><output id="answered-count">0</output>/12</span>
+          <span class="progress-count"><output id="answered-count">0</output>/12 risposte</span>
         </div>
-        <div class="progress-track" role="presentation"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
         <p class="progress-missing" id="progress-missing" hidden></p>
       </div>
     </div>
@@ -83,8 +105,12 @@
       <div class="form-footer">
         <div id="validation-msg" class="alert alert-warn" role="alert" hidden></div>
         <div class="actions">
-          <button type="submit" class="btn btn-primary btn-lg">Calcola il risultato</button>
-          <button type="button" class="btn btn-ghost" id="btn-reset">Azzera le risposte</button>
+          <button type="submit" class="btn btn-primary btn-lg">
+            Calcola il risultato <svg class="icon"><use href="#i-arrow-right"/></svg>
+          </button>
+          <button type="button" class="btn btn-ghost" id="btn-reset">
+            <svg class="icon"><use href="#i-rotate"/></svg> Azzera le risposte
+          </button>
         </div>
       </div>
     </form>
@@ -98,33 +124,38 @@
     <div class="score-hero">
       <div class="score-figure">
         <span class="score-value" id="total-score">—</span>
-        <span class="score-scale">su 48 <span class="micro">(min 12)</span></span>
+        <span class="score-scale">punti su 48 · minimo 12</span>
+        <span class="score-meter" aria-hidden="true"><span id="score-meter-fill"></span></span>
       </div>
       <div class="score-band">
+        <span class="band-badge" id="band-badge">Profilo</span>
         <p class="band-name" id="band-name">—</p>
         <p class="band-reading" id="band-reading"></p>
-        <p class="band-priority" id="band-priority"></p>
+        <p class="band-priority">
+          <svg class="icon"><use href="#i-target"/></svg>
+          <span id="band-priority"></span>
+        </p>
       </div>
     </div>
 
     <div id="alerts" class="alerts"></div>
 
-    <div class="grid-2 grid-results">
+    <div class="grid-2">
       <div class="card">
-        <h2>Le cinque dimensioni</h2>
+        <h3>Le cinque dimensioni</h3>
         <table class="dim-table">
           <caption class="sr-only">Media e percentuale sul massimo per ciascuna dimensione</caption>
           <thead>
-            <tr><th scope="col">Dimensione</th><th scope="col">Media (1–4)</th><th scope="col">% sul max</th></tr>
+            <tr><th scope="col">Dimensione</th><th scope="col">Media</th><th scope="col">% sul max</th></tr>
           </thead>
           <tbody id="dim-tbody"></tbody>
         </table>
         <p class="micro" id="dim-extremes"></p>
       </div>
       <div class="card">
-        <h2>Radar del profilo</h2>
+        <h3>Radar del profilo</h3>
         <div class="chart-holder">
-          <canvas id="radar" width="520" height="520" role="img"
+          <canvas id="radar" width="520" height="400" role="img"
                   aria-label="Radar delle cinque dimensioni, asse da 0 a 4"></canvas>
         </div>
         <p class="micro">Asse fisso 0–4: la forma è confrontabile fra profili diversi.</p>
@@ -137,9 +168,15 @@
     </details>
 
     <div class="actions actions-end">
-      <button type="button" class="btn btn-primary" id="btn-print">Stampa / salva PDF</button>
-      <button type="button" class="btn btn-outline" id="btn-back">Torna alle risposte</button>
-      <button type="button" class="btn btn-ghost" id="btn-new">Nuova sessione</button>
+      <button type="button" class="btn btn-primary" id="btn-print">
+        <svg class="icon"><use href="#i-printer"/></svg> Stampa / salva PDF
+      </button>
+      <button type="button" class="btn btn-outline" id="btn-back">
+        <svg class="icon"><use href="#i-arrow-left"/></svg> Torna alle risposte
+      </button>
+      <button type="button" class="btn btn-ghost" id="btn-new">
+        <svg class="icon"><use href="#i-rotate"/></svg> Nuova sessione
+      </button>
     </div>
   </section>
 

@@ -15,12 +15,21 @@
     validated: false      // true dopo il primo tentativo di calcolo
   };
 
+  /** Punti di "Come funziona" nella intro. */
+  const HOW_IT_WORKS = [
+    TOTAL_ITEMS + ' item estratti casualmente da una banca di 30.',
+    'Nessuna risposta giusta o sbagliata: si misura la padronanza dichiarata.',
+    'Il calcolo parte solo quando tutte le risposte sono complete.',
+    'Ogni nuova sessione propone una selezione diversa di item.'
+  ];
+
   const el = {
     views: {
       intro:   document.getElementById('view-intro'),
       quiz:    document.getElementById('view-quiz'),
       results: document.getElementById('view-results')
     },
+    introHow:    document.getElementById('intro-how'),
     introScale:  document.getElementById('intro-scale'),
     quizScale:   document.getElementById('quiz-scale'),
     itemList:    document.getElementById('item-list'),
@@ -29,6 +38,8 @@
     progress:    document.getElementById('progress-fill'),
     validation:  document.getElementById('validation-msg'),
     totalScore:  document.getElementById('total-score'),
+    scoreMeter:  document.getElementById('score-meter-fill'),
+    bandBadge:   document.getElementById('band-badge'),
     bandName:    document.getElementById('band-name'),
     bandReading: document.getElementById('band-reading'),
     bandPriority: document.getElementById('band-priority'),
@@ -67,6 +78,18 @@
     return s.charAt(0).toLowerCase() + s.slice(1);
   }
 
+  /** Icona dallo sprite in index.html: <svg class="icon"><use href="#id"></svg> */
+  function icon(id) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'icon');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', '#' + id);
+    svg.appendChild(use);
+    return svg;
+  }
+
   /* ------------------------------------------------------------- estrazione */
 
   /** Estrae gli item della sessione rispettando le quote per dimensione. */
@@ -80,6 +103,16 @@
   }
 
   /* ----------------------------------------------------------- rendering UI */
+
+  function renderHowItWorks() {
+    el.introHow.innerHTML = '';
+    HOW_IT_WORKS.forEach(function (line) {
+      const li = document.createElement('li');
+      li.appendChild(icon('i-check'));
+      li.appendChild(document.createElement('span')).textContent = line;
+      el.introHow.appendChild(li);
+    });
+  }
 
   function renderScaleLegend(target) {
     target.innerHTML = '';
@@ -109,7 +142,7 @@
       const legend = document.createElement('legend');
       const num = document.createElement('span');
       num.className = 'item-num';
-      num.textContent = 'Item ' + (idx + 1) + ' di ' + TOTAL_ITEMS;
+      num.textContent = String(idx + 1).padStart(2, '0');
       const text = document.createElement('span');
       text.className = 'item-text';
       const stem = document.createElement('span');
@@ -156,7 +189,8 @@
 
       const flag = document.createElement('p');
       flag.className = 'item-flag';
-      flag.textContent = 'Risposta mancante';
+      flag.appendChild(icon('i-circle-alert'));
+      flag.appendChild(document.createElement('span')).textContent = 'Risposta mancante';
       flag.hidden = true;
       fs.appendChild(flag);
 
@@ -197,29 +231,34 @@
   }
 
   function showValidation(missing) {
+    const count = missing.length === 1 ? 'Manca 1 risposta' : 'Mancano ' + missing.length + ' risposte';
+
     // promemoria sempre visibile nella barra sticky
     el.missingHint.hidden = !(session.validated && missing.length);
-    el.missingHint.textContent = missing.length === 1
-      ? 'Manca 1 risposta'
-      : 'Mancano ' + missing.length + ' risposte';
+    el.missingHint.innerHTML = '';
+    el.missingHint.appendChild(icon('i-circle-alert'));
+    el.missingHint.appendChild(document.createElement('span')).textContent = count;
 
     if (!missing.length) {
       el.validation.hidden = true;
       el.validation.innerHTML = '';
       return;
     }
+
     el.validation.hidden = false;
     el.validation.innerHTML = '';
+    el.validation.appendChild(icon('i-alert'));
+
+    const body = document.createElement('div');
+    body.className = 'alert-body';
 
     const strong = document.createElement('strong');
-    strong.textContent = missing.length === 1
-      ? 'Manca 1 risposta: il risultato non può essere calcolato.'
-      : 'Mancano ' + missing.length + ' risposte: il risultato non può essere calcolato.';
-    el.validation.appendChild(strong);
+    strong.textContent = count + ': il risultato non può essere calcolato.';
+    body.appendChild(strong);
 
     const p = document.createElement('span');
     p.textContent = 'Completa gli item evidenziati: ';
-    el.validation.appendChild(p);
+    body.appendChild(p);
 
     const ul = document.createElement('ul');
     ul.className = 'jump-list';
@@ -231,7 +270,8 @@
       li.appendChild(a);
       ul.appendChild(li);
     });
-    el.validation.appendChild(ul);
+    body.appendChild(ul);
+    el.validation.appendChild(body);
   }
 
   /* ---------------------------------------------------------------- scoring */
@@ -270,6 +310,7 @@
     if (uso - val >= 1) {
       out.push({
         type: 'alert-warn',
+        icon: 'i-alert',
         title: "Usi l'AI più di quanto la verifichi",
         body: 'Uso operativo ' + fmt(uso) + ' contro Valutazione critica ' + fmt(val) +
               ' (scarto ' + fmt(uso - val) + '). È un profilo di rischio: la produttività cresce più della capacità di ' +
@@ -281,6 +322,7 @@
     if (resp <= 2) {
       out.push({
         type: 'alert-danger',
+        icon: 'i-shield-alert',
         title: 'Gap di conformità',
         body: 'Responsabilità ' + fmt(resp) + ' su 4. Trattamento dei dati aziendali, rischi per terzi, ' +
               "trasparenza e rispetto delle policy non sono presidiati: la formazione su questi aspetti va " +
@@ -294,7 +336,12 @@
   function fmt(n) { return n.toFixed(2).replace('.', ','); }
 
   function renderResults(scores) {
+    const minTotal = TOTAL_ITEMS;      // 12
+    const maxTotal = TOTAL_ITEMS * 4;  // 48
+
     el.totalScore.textContent = scores.total;
+    el.scoreMeter.style.width = ((scores.total - minTotal) / (maxTotal - minTotal) * 100) + '%';
+    el.bandBadge.textContent = scores.band.min + '–' + scores.band.max + ' punti';
     el.bandName.textContent = scores.band.name;
     el.bandReading.textContent = scores.band.reading;
     el.bandPriority.textContent = scores.band.priority;
@@ -305,10 +352,16 @@
       const div = document.createElement('div');
       div.className = 'alert ' + a.type;
       div.setAttribute('role', 'note');
+      div.appendChild(icon(a.icon));
+
+      const body = document.createElement('div');
+      body.className = 'alert-body';
       const strong = document.createElement('strong');
       strong.textContent = a.title;
-      div.appendChild(strong);
-      div.appendChild(document.createTextNode(a.body));
+      body.appendChild(strong);
+      body.appendChild(document.createTextNode(a.body));
+      div.appendChild(body);
+
       el.alerts.appendChild(div);
     });
 
@@ -330,10 +383,12 @@
       tr.appendChild(th);
 
       const tdMean = document.createElement('td');
+      tdMean.className = 'dim-mean';
       tdMean.textContent = fmt(d.mean);
       tr.appendChild(tdMean);
 
       const tdPct = document.createElement('td');
+      tdPct.className = 'dim-pct';
       tdPct.textContent = d.pct + '%';
       tr.appendChild(tdPct);
 
@@ -369,17 +424,18 @@
   /** Radar su canvas nativo, asse fisso 0–4. */
   function drawRadar(byDim) {
     const canvas = el.radar;
-    const size = 520;
+    const size = 520;           // larghezza: serve spazio per le etichette laterali
+    const height = 400;         // altezza ritagliata sull'ingombro reale della figura
     const dpr = window.devicePixelRatio || 1;
     canvas.width = size * dpr;
-    canvas.height = size * dpr;
+    canvas.height = height * dpr;
 
     const ctx = canvas.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, size);
+    ctx.clearRect(0, 0, size, height);
 
     const cx = size / 2;
-    const cy = size / 2 + 6;
+    const cy = 192;
     const R = 150;              // raggio corrispondente al valore 4
     const MAX = 4;
     const n = byDim.length;
@@ -401,16 +457,18 @@
       ctx.closePath();
     }
 
-    // griglia
+    // griglia: anello esterno pieno, interni tratteggiati come nei grafici dell'app IFAB
     ctx.lineWidth = 1;
     for (let v = 1; v <= MAX; v++) {
       ring(v);
-      ctx.strokeStyle = v === MAX ? '#b9c4cf' : '#e2e7ec';
+      ctx.strokeStyle = '#e5e5e5';
+      ctx.setLineDash(v === MAX ? [] : [4, 4]);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
 
     // raggi
-    ctx.strokeStyle = '#e2e7ec';
+    ctx.strokeStyle = '#e5e5e5';
     for (let i = 0; i < n; i++) {
       const p = point(i, MAX);
       ctx.beginPath();
@@ -421,7 +479,7 @@
 
     // etichette dei livelli sull'asse verticale
     ctx.font = '11px ' + fontStack();
-    ctx.fillStyle = '#8b97a3';
+    ctx.fillStyle = '#8a8a8a';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let v = 1; v <= MAX; v++) {
@@ -435,9 +493,9 @@
       if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
     });
     ctx.closePath();
-    ctx.fillStyle = 'rgba(0, 184, 212, 0.22)';
+    ctx.fillStyle = 'rgba(27, 152, 224, 0.14)';
     ctx.fill();
-    ctx.strokeStyle = '#0b2545';
+    ctx.strokeStyle = '#1b98e0';
     ctx.lineWidth = 2;
     ctx.stroke();
 
@@ -446,7 +504,7 @@
       const p = point(i, d.mean);
       ctx.beginPath();
       ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      ctx.fillStyle = '#0b2545';
+      ctx.fillStyle = '#1b98e0';
       ctx.fill();
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
@@ -471,11 +529,11 @@
       if (align === 'right') lx = Math.max(lx, pad + w);
       if (align === 'center') lx = Math.min(Math.max(lx, pad + w / 2), size - pad - w / 2);
 
-      ctx.fillStyle = '#0b2545';
+      ctx.fillStyle = '#21344d';
       ctx.fillText(d.label, lx, ly);
 
       ctx.font = '11px ' + fontStack();
-      ctx.fillStyle = '#4d565f';
+      ctx.fillStyle = '#8a8a8a';
       ctx.fillText(fmt(d.mean), lx, ly + 15);
     });
 
@@ -485,7 +543,7 @@
   }
 
   function fontStack() {
-    return '"Inter", "Helvetica Neue", Helvetica, Arial, "Segoe UI", system-ui, sans-serif';
+    return '"Geist", "Segoe UI", Arial, Helvetica, sans-serif';
   }
 
   /* --------------------------------------------------------------- navigazione */
@@ -572,6 +630,7 @@
 
   /* ---------------------------------------------------------------- avvio */
 
+  renderHowItWorks();
   renderScaleLegend(el.introScale);
   renderScaleLegend(el.quizScale);
   session.items = drawItems(); // pronta anche se si arriva al quiz senza passare dall'intro
