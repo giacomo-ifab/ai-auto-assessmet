@@ -13,6 +13,6 @@
  */
 
 window.AIAA_CONFIG = {
-  supabaseUrl: 'https://INSERISCI-IL-TUO-PROGETTO.supabase.co',
-  supabaseAnonKey: 'INSERISCI-LA-CHIAVE-ANON'
+  supabaseUrl: 'https://bpsjetopgkaiicmtsxrw.supabase.co',
+  supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwc2pldG9wZ2thaWljbXRzeHJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5NzUwMDUsImV4cCI6MjEwMjU1MTAwNX0._gu8Wt7__AZslZdUNPuhKaYCxDCxbRvlobVmI48qOvs'
 };

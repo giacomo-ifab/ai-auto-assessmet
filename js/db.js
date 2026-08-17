@@ -19,8 +19,10 @@ window.DB = (function () {
   const url = String(cfg.supabaseUrl || '').replace(/\/+$/, '');
   const anonKey = String(cfg.supabaseAnonKey || '');
 
-  /** true solo se la configurazione è stata compilata davvero. */
-  const configured = /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url) && anonKey.length > 40;
+  /** true solo se la configurazione è stata compilata davvero.
+   *  Accetta sia la chiave anon "classica" (JWT) sia le nuove sb_publishable_… */
+  const configured = /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)$/i.test(url) &&
+                     anonKey.length > 20 && !/INSERISCI/i.test(anonKey);
 
   const TOKEN_KEY = 'aiaa_facilitator_token';
   const DEBOUNCE_MS = 800;
