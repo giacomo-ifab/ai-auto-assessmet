@@ -476,8 +476,10 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
 
 .chart-holder { max-width: 420px; margin: 0 auto; }
 
-/* canvas (radar) e SVG si adattano al contenitore */
-#radar,
+/* canvas (radar) e SVG si adattano al contenitore. La regola vale per ogni
+   canvas dentro .chart-holder e non per un id: agganciarla a #radar lasciava il
+   radar per area alla sua dimensione intrinseca (520 px × devicePixelRatio). */
+.chart-holder canvas,
 .chart-holder svg { width: 100%; height: auto; display: block; }
 
 .detail-answers {
