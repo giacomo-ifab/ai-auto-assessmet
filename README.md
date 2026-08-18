@@ -314,3 +314,16 @@ Il modello di sicurezza è quello standard di un'app statica su Supabase:
 ## Pubblicazione su GitHub Pages
 
 Settings → Pages → *Deploy from a branch* → branch `main`, cartella `/ (root)`.
+
+### Cache del browser: il numero di versione negli URL
+
+CSS e JavaScript sono richiamati con un parametro di versione
+(`js/app.js?v=20260818`). Serve a evitare il caso in cui il browser ha già in
+cache i vecchi script ma scarica l'HTML nuovo: la pagina mostra i comandi della
+funzione appena aggiunta e nessuno di essi funziona, perché il codice che li
+gestisce non è arrivato. È accaduto con la segmentazione per area: menù delle
+aree fermo su «Caricamento…» e schede del facilitatore che non cambiavano.
+
+**Quando si pubblica una modifica a un file in `css/` o `js/`, cambiare quel
+numero** nei due HTML (una data va benissimo). Un `Ctrl+Shift+R` risolve il
+singolo caso, ma non si può chiedere a venti partecipanti in sala.
