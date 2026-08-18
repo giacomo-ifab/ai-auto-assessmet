@@ -31,6 +31,8 @@
   --rose-line:   #fda4af;
   --rose-text:   #881337;
   --green:       #059669;
+  --danger:      #be123c;
+  --danger-deep: #9f1239;
 
   --radius-sm:  8px;
   --radius:     12px;
@@ -674,10 +676,94 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
   font-size: 0.875rem;
 }
 
+/* ---------- Cancellazioni: selezione, pulsanti, conferma ---------- */
+
+.alert-ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+
+.btn-danger { border-color: var(--danger); color: var(--danger); background: var(--surface); }
+.btn-danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-danger:disabled { border-color: var(--border); color: #a5a5a5; background: var(--surface); cursor: not-allowed; }
+.btn-danger:disabled:hover { background: var(--surface); color: #a5a5a5; }
+
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+
+/* Cestino di riga: nessun contorno finché non ci si passa sopra. */
+.btn-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.btn-icon .icon { width: 15px; height: 15px; }
+.btn-icon:hover { color: var(--danger); border-color: var(--rose-line); background: var(--rose-bg); }
+.btn-icon:focus-visible { outline: 2px solid var(--danger); outline-offset: 1px; }
+
+.bulk-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.check { display: inline-flex; align-items: center; gap: 7px; font-size: 0.8rem; color: var(--muted); cursor: pointer; }
+.check input { width: 15px; height: 15px; accent-color: var(--danger); cursor: pointer; margin: 0; }
+
+.data-table .col-check, .data-table .col-act { width: 1%; }
+.data-table td.cell-check, .data-table td.cell-act { padding-top: 4px; padding-bottom: 4px; }
+.data-table tr.is-selected { background: var(--rose-bg); }
+.data-table tbody tr.is-empty td { color: var(--muted); white-space: normal; }
+
+.card-danger { border-color: var(--rose-line); background: var(--rose-bg); }
+.card-danger h3 { color: var(--rose-text); }
+.card-danger .micro { color: var(--rose-text); }
+.card-danger .btn-danger { background: var(--surface); }
+
+/* ---------- Dialogo di conferma ---------- */
+
+.modal { border: 0; padding: 0; background: none; max-width: min(30rem, calc(100vw - 32px)); }
+.modal::backdrop { background: rgba(33, 52, 77, 0.45); }
+
+.modal-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 22px 24px;
+}
+
+.modal-card h3 { margin: 0 0 8px; }
+.modal-text { margin: 0; font-size: 0.9rem; color: var(--muted); }
+
+.modal-list {
+  margin: 12px 0 0; padding: 10px 14px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  font-size: 0.82rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.modal-list:empty { display: none; }
+.modal-list li { color: var(--navy); }
+.modal-list li + li { margin-top: 4px; }
+
+.modal-card .field { margin-top: 14px; }
+.modal-actions { margin-top: 18px; justify-content: flex-end; }
+
 /* ---------- Stampa ---------- */
 
 @media print {
-  .site-header, .site-footer, .actions, .sticky-bar { display: none !important; }
+  .site-header, .site-footer, .actions, .sticky-bar, .bulk-bar, .modal,
+  .col-check, .col-act, .cell-check, .cell-act, .card-danger { display: none !important; }
   body { background: #fff; font-size: 11pt; }
   .view { padding: 0; }
   .card, .score-hero, .detail-answers { border-color: #999; box-shadow: none; break-inside: avoid; }

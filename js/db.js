@@ -9,7 +9,12 @@
      completeSession   → PATCH /rest/v1/sessions?id=eq.<id>
 
    Letture (solo utenti autenticati, pagina facilitatore):
-     signIn / signOut / currentUser / fetchOverview
+     signIn / signOut / currentUser / fetchOverview / fetchParticipants
+
+   Cancellazioni (solo utenti autenticati, pagina facilitatore):
+     deleteParticipants → DELETE /rest/v1/participants?id=in.(…)
+     deleteSessions     → DELETE /rest/v1/sessions?id=in.(…)
+     deleteAllData      → DELETE /rest/v1/participants?id=not.is.null
    ========================================================================== */
 
 window.DB = (function () {
@@ -226,6 +231,54 @@ window.DB = (function () {
     }).catch(function () { return null; });
   }
 
+  /** Elenco dei partecipanti registrati, comprese le registrazioni senza
+   *  nessun questionario avviato (che in fetchOverview non comparirebbero). */
+  function fetchParticipants(limit) {
+    return request('/rest/v1/participants?select=id,first_name,last_name,created_at' +
+                   '&order=created_at.desc&limit=' + (limit || 2000), { useAuth: true });
+  }
+
+  /* ------------------------------------------------ cancellazioni (auth) */
+
+  // DELETE diretti, non funzioni RPC: il facilitatore è autenticato e ha la
+  // policy di lettura, quindi PostgREST riesce a filtrare le righe. Gli id
+  // passano da un controllo di forma perché finiscono dentro la query string.
+
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+  function idFilter(ids) {
+    const clean = (ids || []).map(String).filter(function (id) { return UUID_RE.test(id); });
+    if (!clean.length) throw new Error('nessun elemento valido da eliminare');
+    return clean.length === 1 ? 'id=eq.' + clean[0] : 'id=in.(' + clean.join(',') + ')';
+  }
+
+  /** Cancella per id e restituisce quante righe sono state davvero rimosse. */
+  function deleteRows(table, ids) {
+    let filter;
+    try { filter = idFilter(ids); } catch (err) { return Promise.reject(err); }
+    return request('/rest/v1/' + table + '?' + filter, {
+      method: 'DELETE',
+      useAuth: true,
+      headers: { Prefer: 'return=representation' }
+    }).then(function (rows) { return Array.isArray(rows) ? rows.length : 0; });
+  }
+
+  /** Partecipanti: le loro sessioni e risposte cadono per cascade. */
+  function deleteParticipants(ids) { return deleteRows('participants', ids); }
+
+  /** Singole compilazioni: le risposte cadono per cascade, il partecipante resta. */
+  function deleteSessions(ids) { return deleteRows('sessions', ids); }
+
+  /** Svuota l'archivio: basta cancellare i partecipanti, il resto è in cascata.
+   *  Il filtro c'è perché PostgREST rifiuta le DELETE senza condizione. */
+  function deleteAllData() {
+    return request('/rest/v1/participants?id=not.is.null', {
+      method: 'DELETE',
+      useAuth: true,
+      headers: { Prefer: 'return=representation' }
+    }).then(function (rows) { return Array.isArray(rows) ? rows.length : 0; });
+  }
+
   return {
     configured: configured,
     get status() { return status; },
@@ -240,6 +293,10 @@ window.DB = (function () {
     signOut: signOut,
     currentUser: currentUser,
     fetchOverview: fetchOverview,
-    countParticipants: countParticipants
+    countParticipants: countParticipants,
+    fetchParticipants: fetchParticipants,
+    deleteParticipants: deleteParticipants,
+    deleteSessions: deleteSessions,
+    deleteAllData: deleteAllData
   };
 })();

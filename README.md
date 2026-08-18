@@ -69,8 +69,8 @@ js/items.js           banca item, dimensioni con quote, scala, fasce di profilo
 js/db.js              client REST Supabase: scritture, login, letture aggregate
 js/radar.js           radar su canvas con asse fisso 0–4, condiviso fra le due pagine
 js/app.js             registrazione, estrazione, validazione, scoring, alert
-js/facilitator.js     aggregati, tabella compilazioni, export CSV
-supabase/schema.sql   tabelle, indici, trigger, policy RLS, viste
+js/facilitator.js     aggregati, tabelle compilazioni e partecipanti, cancellazioni, export CSV
+supabase/schema.sql   tabelle, indici, trigger, policy RLS, funzioni di scrittura, viste
 ```
 
 Il font Geist arriva da Google Fonts; senza rete la pagina ripiega su Segoe UI / Arial e resta
@@ -102,7 +102,8 @@ significherebbe rendere visibili a chiunque le risposte di tutti.
 ### Configurazione in tre passi
 
 1. **Schema**: apri il SQL Editor del progetto Supabase e lancia `supabase/schema.sql`
-   (idempotente, si può rilanciare).
+   (idempotente, si può rilanciare). Se il progetto è già configurato, va rilanciato comunque: le
+   policy di cancellazione usate dalla pagina facilitatore sono state aggiunte lì.
 2. **Chiavi**: in `js/config.js` inserisci *Project URL* e *anon public key*
    (Project Settings → API).
 3. **Facilitatore**: Authentication → Users → *Add user* con email e password; disattiva la
@@ -116,8 +117,28 @@ Senza il passo 2 l'app resta usabile: calcola il profilo e avvisa in home che nu
 `facilitatore.html` chiede le credenziali Supabase e mostra gli aggregati calcolati dai dati letti
 in una sola richiesta: partecipanti, tasso di completamento, punteggio medio, medie per dimensione
 con radar di gruppo (stesso asse 0–4 del profilo individuale), distribuzione delle fasce, frequenza
-dei due alert, item con la media più bassa, elenco delle compilazioni (anche quelle in corso) ed
-export CSV.
+dei due alert, item con la media più bassa, elenco delle compilazioni (anche quelle in corso),
+elenco dei partecipanti registrati ed export CSV.
+
+### Cancellazioni
+
+Dalla stessa pagina si eliminano i dati. La cancellazione è **fisica e immediata**: le righe escono
+dal database, non vengono nascoste con un flag, e non esiste un annulla.
+
+| Cosa elimini | Che cosa sparisce con lui | Che cosa resta |
+|---|---|---|
+| una **compilazione** (tabella *Compilazioni*) | le sue risposte | il partecipante e le sue altre compilazioni |
+| un **partecipante** (tabella *Partecipanti*) | tutte le sue compilazioni e tutte le risposte | nulla di suo |
+| **tutto l'archivio** (*Svuota l'archivio*) | partecipanti, compilazioni, risposte | solo l'account del facilitatore, che sta in Authentication |
+
+In entrambe le tabelle si può usare il cestino di riga oppure selezionare più righe con le caselle e
+premere il pulsante di gruppo. Ogni azione passa da un dialogo di conferma che **elenca nome per
+nome** ciò che sta per sparire; per lo svuotamento totale bisogna scrivere `ELIMINA` per intero.
+Finita la cancellazione i dati vengono riletti, così aggregati e radar si ricalcolano subito senza le
+righe rimosse; il conteggio in verde è quello riferito dal database, non quello atteso.
+
+Le righe figlie cadono per le foreign key `on delete cascade`, quindi non restano risposte orfane.
+L'export CSV è l'unico backup e va fatto **prima**.
 
 ## Dati, privacy, sicurezza
 
@@ -131,6 +152,10 @@ Il modello di sicurezza è quello standard di un'app statica su Supabase:
 - le tre tabelle sono **chiuse** a quella chiave: nessun accesso diretto, né in lettura né in
   scrittura. Si passa solo dalle cinque funzioni, che non restituiscono dati altrui;
 - la lettura è consentita solo agli utenti autenticati (il facilitatore);
+- **anche la cancellazione** è riservata agli utenti autenticati (`for delete to authenticated` più
+  il privilegio `delete`, che alla chiave anon resta revocato): un partecipante non può cancellare
+  nulla, nemmeno le proprie risposte. Verificato sul progetto: con la chiave anon una DELETE
+  risponde `42501 permission denied`;
 - una sessione conclusa non è più modificabile: `complete_session` e `save_answer` rifiutano;
 - resta possibile, per chi estragga la chiave dal codice, creare partecipanti e sessioni finte
   (è inevitabile senza autenticazione dei partecipanti): sono dati in più, non dati letti o

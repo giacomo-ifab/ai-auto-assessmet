@@ -114,6 +114,35 @@ revoke insert, update, delete on public.sessions     from anon;
 revoke insert, update, delete on public.answers      from anon;
 grant select on public.participants, public.sessions, public.answers to authenticated;
 
+-- ------------------------------------------------------ cancellazioni
+-- Il facilitatore, dalla pagina statistiche, può eliminare partecipanti e
+-- compilazioni. La cancellazione è fisica e immediata: le righe escono dal
+-- database, non vengono marcate come nascoste.
+--
+-- Qui non servono funzioni SECURITY DEFINER come per le scritture: chi cancella
+-- è autenticato e ha già la policy di SELECT, quindi il DELETE ... WHERE di
+-- PostgREST riesce a filtrare le righe. La chiave anon resta senza alcun
+-- privilegio di DELETE: un partecipante non può cancellare nulla, nemmeno le
+-- proprie risposte.
+--
+-- Le righe figlie se ne vanno per le foreign key ON DELETE CASCADE
+-- (participants → sessions → answers): i controlli di integrità girano con i
+-- privilegi del proprietario delle tabelle e non passano da RLS.
+
+drop policy if exists "participants delete auth" on public.participants;
+create policy "participants delete auth" on public.participants
+  for delete to authenticated using (true);
+
+drop policy if exists "sessions delete auth" on public.sessions;
+create policy "sessions delete auth" on public.sessions
+  for delete to authenticated using (true);
+
+drop policy if exists "answers delete auth" on public.answers;
+create policy "answers delete auth" on public.answers
+  for delete to authenticated using (true);
+
+grant delete on public.participants, public.sessions, public.answers to authenticated;
+
 -- --------------------------------------------------------- API di scrittura
 -- Funzioni SECURITY DEFINER: girano con i privilegi del proprietario, quindi
 -- scrivono sulle tabelle chiuse, ma solo dopo aver validato gli argomenti.

@@ -20,6 +20,8 @@
     <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
   </defs>
 </svg>
@@ -94,6 +96,7 @@
     </div>
 
     <div class="alert alert-warn" id="stats-error" role="alert" hidden></div>
+    <div class="alert alert-ok" id="stats-note" role="status" hidden></div>
 
     <div id="stats-empty" class="empty-state" hidden>
       Nessuna compilazione registrata finora.
@@ -143,20 +146,89 @@
           <h3>Compilazioni</h3>
           <span class="micro" id="sessions-count"></span>
         </div>
+        <div class="bulk-bar">
+          <label class="check">
+            <input type="checkbox" id="sessions-all">
+            <span>Seleziona tutte</span>
+          </label>
+          <button type="button" class="btn btn-danger btn-sm" id="btn-del-sessions" disabled>
+            <svg class="icon"><use href="#i-trash"/></svg>
+            <span id="btn-del-sessions-label">Elimina le selezionate</span>
+          </button>
+        </div>
         <div class="table-scroll">
           <table class="data-table">
             <thead>
               <tr>
+                <th scope="col" class="col-check"><span class="sr-only">Selezione</span></th>
                 <th scope="col">Partecipante</th>
                 <th scope="col">Avviata</th>
                 <th scope="col">Stato</th>
                 <th scope="col">Totale</th>
                 <th scope="col">Profilo</th>
                 <th scope="col">Alert</th>
+                <th scope="col" class="col-act"><span class="sr-only">Azioni</span></th>
               </tr>
             </thead>
             <tbody id="sessions-tbody"></tbody>
           </table>
+        </div>
+        <p class="micro">
+          Eliminare una compilazione cancella anche le sue risposte; il partecipante resta
+          registrato, con le eventuali altre compilazioni.
+        </p>
+      </div>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="card-head">
+          <h3>Partecipanti</h3>
+          <span class="micro" id="people-count"></span>
+        </div>
+        <div class="bulk-bar">
+          <label class="check">
+            <input type="checkbox" id="people-all">
+            <span>Seleziona tutti</span>
+          </label>
+          <button type="button" class="btn btn-danger btn-sm" id="btn-del-people" disabled>
+            <svg class="icon"><use href="#i-trash"/></svg>
+            <span id="btn-del-people-label">Elimina i selezionati</span>
+          </button>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col" class="col-check"><span class="sr-only">Selezione</span></th>
+                <th scope="col">Nome</th>
+                <th scope="col">Registrato</th>
+                <th scope="col">Compilazioni</th>
+                <th scope="col">Ultima attività</th>
+                <th scope="col" class="col-act"><span class="sr-only">Azioni</span></th>
+              </tr>
+            </thead>
+            <tbody id="people-tbody"></tbody>
+          </table>
+        </div>
+        <p class="micro">
+          Eliminare un partecipante cancella anche tutte le sue compilazioni e risposte: gli
+          aggregati qui sopra si ricalcolano senza di lui.
+        </p>
+      </div>
+
+      <div class="card card-danger" style="margin-top: 16px">
+        <div class="card-head">
+          <h3>Svuota l'archivio</h3>
+          <span class="micro">operazione non reversibile</span>
+        </div>
+        <p class="micro">
+          Cancella dal database <strong>tutti</strong> i partecipanti, tutte le compilazioni e tutte
+          le risposte. Utile per ripartire da zero fra due workshop: esporta prima il CSV, perché non
+          c'è modo di recuperare i dati.
+        </p>
+        <div class="actions" style="margin-top: 12px">
+          <button type="button" class="btn btn-danger" id="btn-del-all">
+            <svg class="icon"><use href="#i-trash"/></svg> Elimina tutti i dati
+          </button>
         </div>
       </div>
     </div>
@@ -164,11 +236,30 @@
 
 </main>
 
+<dialog class="modal" id="confirm-dialog" aria-labelledby="confirm-title">
+  <div class="modal-card">
+    <h3 id="confirm-title">Confermi l'eliminazione?</h3>
+    <p class="modal-text" id="confirm-text"></p>
+    <ul class="modal-list" id="confirm-list"></ul>
+    <div class="field" id="confirm-typed" hidden>
+      <label for="confirm-word">Scrivi ELIMINA per confermare</label>
+      <input type="text" id="confirm-word" autocomplete="off" spellcheck="false" placeholder="ELIMINA">
+    </div>
+    <div class="actions modal-actions">
+      <button type="button" class="btn btn-ghost" id="confirm-cancel">Annulla</button>
+      <button type="button" class="btn btn-danger" id="confirm-ok">
+        <svg class="icon"><use href="#i-trash"/></svg> <span id="confirm-ok-label">Elimina</span>
+      </button>
+    </div>
+  </div>
+</dialog>
+
 <footer class="site-footer">
   <div class="wrap">
     <p class="micro">
       Dati letti da Supabase con un account autorizzato. La chiave pubblica dell'app permette solo
-      di scrivere: nessun partecipante può leggere le risposte degli altri.
+      di scrivere: nessun partecipante può leggere le risposte degli altri, né cancellarle.
+      Le eliminazioni fatte da questa pagina sono definitive e agiscono direttamente sul database.
     </p>
   </div>
 </footer>

@@ -1,6 +1,9 @@
 /* ==========================================================================
    Pagina facilitatore: login con account Supabase e statistiche di gruppo.
    Gli aggregati sono calcolati qui dai dati letti in una sola richiesta.
+   Da qui si eliminano anche partecipanti e compilazioni: la cancellazione va
+   sul database (DELETE con il token del facilitatore) e non è reversibile,
+   quindi passa sempre da un dialogo di conferma che elenca ciò che sparisce.
    Dipende da items.js, db.js, radar.js.
    ========================================================================== */
 
@@ -30,8 +33,51 @@
     itemBars:    document.getElementById('item-bars'),
     sessionsBody: document.getElementById('sessions-tbody'),
     sessionsCount: document.getElementById('sessions-count'),
+    peopleBody:  document.getElementById('people-tbody'),
+    peopleCount: document.getElementById('people-count'),
+    statsNote:   document.getElementById('stats-note'),
     loadedAt:    document.getElementById('loaded-at'),
-    radar:       document.getElementById('radar')
+    radar:       document.getElementById('radar'),
+
+    refresh:     document.getElementById('btn-refresh'),
+    sessionsAll: document.getElementById('sessions-all'),
+    peopleAll:   document.getElementById('people-all'),
+    delSessions: document.getElementById('btn-del-sessions'),
+    delSessionsLabel: document.getElementById('btn-del-sessions-label'),
+    delPeople:   document.getElementById('btn-del-people'),
+    delPeopleLabel: document.getElementById('btn-del-people-label'),
+    delAll:      document.getElementById('btn-del-all'),
+
+    dialog:      document.getElementById('confirm-dialog'),
+    dlgTitle:    document.getElementById('confirm-title'),
+    dlgText:     document.getElementById('confirm-text'),
+    dlgList:     document.getElementById('confirm-list'),
+    dlgTyped:    document.getElementById('confirm-typed'),
+    dlgWord:     document.getElementById('confirm-word'),
+    dlgOk:       document.getElementById('confirm-ok'),
+    dlgOkLabel:  document.getElementById('confirm-ok-label'),
+    dlgCancel:   document.getElementById('confirm-cancel')
+  };
+
+  /* Le due tabelle selezionabili si comportano allo stesso modo: cambia solo
+     il testo del pulsante di gruppo. */
+  const GROUPS = {
+    sessions: {
+      tbody: el.sessionsBody,
+      all: el.sessionsAll,
+      button: el.delSessions,
+      label: el.delSessionsLabel,
+      none: 'Elimina le selezionate',
+      some: function (n) { return 'Elimina ' + n + (n === 1 ? ' compilazione' : ' compilazioni'); }
+    },
+    people: {
+      tbody: el.peopleBody,
+      all: el.peopleAll,
+      button: el.delPeople,
+      label: el.delPeopleLabel,
+      none: 'Elimina i selezionati',
+      some: function (n) { return 'Elimina ' + n + (n === 1 ? ' partecipante' : ' partecipanti'); }
+    }
   };
 
   const ALERT_LABELS = {
@@ -42,7 +88,8 @@
   const ITEM_TEXT = {};
   ITEMS.forEach(function (it) { ITEM_TEXT[it.id] = it.text; });
 
-  let rows = [];   // sessioni con partecipante e risposte
+  let rows = [];     // sessioni con partecipante e risposte
+  let people = [];   // partecipanti registrati, anche senza compilazioni
 
   /* --------------------------------------------------------------- utility */
 
@@ -73,6 +120,21 @@
     body.className = 'alert-body';
     body.textContent = message;
     target.appendChild(body);
+  }
+
+  let noteTimer = null;
+
+  /** Esito di una cancellazione: si spegne da sé, non richiede una chiusura. */
+  function showNote(message) {
+    el.statsNote.hidden = false;
+    el.statsNote.innerHTML = '';
+    el.statsNote.appendChild(icon('i-check'));
+    const body = document.createElement('div');
+    body.className = 'alert-body';
+    body.textContent = message;
+    el.statsNote.appendChild(body);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { el.statsNote.hidden = true; }, 6000);
   }
 
   function dateLabel(iso) {
@@ -126,6 +188,48 @@
     return li;
   }
 
+  function personName(participant) {
+    return participant ? participant.first_name + ' ' + participant.last_name : '—';
+  }
+
+  /** Cella con la casella di selezione della riga. */
+  function checkCell(id, label) {
+    const td = document.createElement('td');
+    td.className = 'cell-check';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'row-check';
+    cb.value = id;
+    cb.setAttribute('aria-label', 'Seleziona ' + label);
+    td.appendChild(cb);
+    return td;
+  }
+
+  /** Cella con il cestino di riga. */
+  function trashCell(id, label) {
+    const td = document.createElement('td');
+    td.className = 'cell-act';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn-icon';
+    btn.dataset.id = id;
+    btn.title = 'Elimina ' + label;
+    btn.setAttribute('aria-label', 'Elimina ' + label);
+    btn.appendChild(icon('i-trash'));
+    td.appendChild(btn);
+    return td;
+  }
+
+  function emptyRow(tbody, colspan, message) {
+    const tr = document.createElement('tr');
+    tr.className = 'is-empty';
+    const td = document.createElement('td');
+    td.colSpan = colspan;
+    td.textContent = message;
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+
   /* ---------------------------------------------------------- statistiche */
 
   function completed() {
@@ -152,6 +256,18 @@
     });
   }
 
+  function sessionsOf(participantId) {
+    return rows.filter(function (r) { return r.participants && r.participants.id === participantId; });
+  }
+
+  /** Ultimo momento in cui il partecipante ha toccato il questionario. */
+  function lastActivity(sessions) {
+    const stamps = sessions.map(function (r) {
+      return r.completed_at || r.updated_at || r.started_at;
+    }).filter(Boolean).sort();
+    return stamps.length ? stamps[stamps.length - 1] : null;
+  }
+
   function itemMeans() {
     const acc = {};
     completed().forEach(function (r) {
@@ -171,12 +287,15 @@
   function render() {
     const done = completed();
 
-    el.statsEmpty.hidden = rows.length > 0;
-    el.statsBody.hidden = rows.length === 0;
+    // Un partecipante registrato che non ha ancora avviato nulla non produce righe
+    // in `rows`, ma deve restare visibile: è uno di quelli da poter cancellare.
+    const hasData = rows.length > 0 || people.length > 0;
+    el.statsEmpty.hidden = hasData;
+    el.statsBody.hidden = !hasData;
     el.loadedAt.textContent = 'Aggiornato alle ' +
       new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 
-    if (!rows.length) return;
+    if (!hasData) return;
 
     // --- KPI
     const participants = {};
@@ -185,7 +304,8 @@
     const avgTotal = totals.length ? totals.reduce(function (a, b) { return a + b; }, 0) / totals.length : 0;
 
     el.kpiGrid.innerHTML = '';
-    el.kpiGrid.appendChild(kpi('Partecipanti', Object.keys(participants).length));
+    el.kpiGrid.appendChild(kpi('Partecipanti', people.length,
+      Object.keys(participants).length + ' con almeno una compilazione'));
     el.kpiGrid.appendChild(kpi('Compilazioni', rows.length, done.length + ' complete'));
     el.kpiGrid.appendChild(kpi('Completamento', pct(done.length, rows.length) + '%',
       (rows.length - done.length) + ' interrotte'));
@@ -242,14 +362,15 @@
     // --- tabella compilazioni
     el.sessionsCount.textContent = rows.length + (rows.length === 1 ? ' riga' : ' righe');
     el.sessionsBody.innerHTML = '';
+    if (!rows.length) emptyRow(el.sessionsBody, 8, 'Nessuna compilazione registrata.');
+
     rows.forEach(function (r) {
       const tr = document.createElement('tr');
+      tr.appendChild(checkCell(r.id, 'la compilazione di ' + personName(r.participants)));
 
       const name = document.createElement('td');
       name.className = 'name';
-      name.textContent = r.participants
-        ? r.participants.first_name + ' ' + r.participants.last_name
-        : '—';
+      name.textContent = personName(r.participants);
       tr.appendChild(name);
 
       const started = document.createElement('td');
@@ -287,7 +408,265 @@
       }
       tr.appendChild(alerts);
 
+      tr.appendChild(trashCell(r.id, 'la compilazione di ' + personName(r.participants)));
+
       el.sessionsBody.appendChild(tr);
+    });
+
+    renderPeople();
+    syncSelection('sessions');
+    syncSelection('people');
+  }
+
+  /* ------------------------------------------------------- partecipanti */
+
+  function renderPeople() {
+    el.peopleCount.textContent = people.length + (people.length === 1 ? ' registrato' : ' registrati');
+    el.peopleBody.innerHTML = '';
+
+    if (!people.length) {
+      emptyRow(el.peopleBody, 6, 'Nessun partecipante registrato.');
+      return;
+    }
+
+    people.forEach(function (p) {
+      const own = sessionsOf(p.id);
+      const done = own.filter(function (r) { return r.completed_at; }).length;
+      const label = p.first_name + ' ' + p.last_name;
+
+      const tr = document.createElement('tr');
+      tr.appendChild(checkCell(p.id, label));
+
+      const name = document.createElement('td');
+      name.className = 'name';
+      name.textContent = label;
+      tr.appendChild(name);
+
+      const created = document.createElement('td');
+      created.textContent = dateLabel(p.created_at);
+      tr.appendChild(created);
+
+      const count = document.createElement('td');
+      count.textContent = own.length
+        ? own.length + (done < own.length ? ' · ' + done + ' complete' : '')
+        : 'nessuna';
+      tr.appendChild(count);
+
+      const last = document.createElement('td');
+      last.textContent = dateLabel(lastActivity(own));
+      tr.appendChild(last);
+
+      tr.appendChild(trashCell(p.id, label));
+      el.peopleBody.appendChild(tr);
+    });
+  }
+
+  /* --------------------------------------------------- selezione multipla */
+
+  function boxesOf(group) {
+    return Array.prototype.slice.call(GROUPS[group].tbody.querySelectorAll('input.row-check'));
+  }
+
+  function selectedIds(group) {
+    return boxesOf(group).filter(function (cb) { return cb.checked; })
+      .map(function (cb) { return cb.value; });
+  }
+
+  /** Tiene allineati riga evidenziata, pulsante di gruppo e casella «tutti». */
+  function syncSelection(group) {
+    const g = GROUPS[group];
+    const boxes = boxesOf(group);
+    let n = 0;
+
+    boxes.forEach(function (cb) {
+      const tr = cb.parentNode.parentNode;
+      if (tr) tr.classList.toggle('is-selected', cb.checked);
+      if (cb.checked) n += 1;
+    });
+
+    g.button.disabled = n === 0;
+    g.label.textContent = n ? g.some(n) : g.none;
+    g.all.checked = boxes.length > 0 && n === boxes.length;
+    g.all.indeterminate = n > 0 && n < boxes.length;
+    g.all.disabled = boxes.length === 0;
+  }
+
+  /* --------------------------------------------------- conferma e cancellazioni */
+
+  // Il dialogo è uno solo, riusato: elenca sempre che cosa sta per sparire e,
+  // per lo svuotamento totale, chiede di scrivere la parola per intero.
+  const hasDialog = el.dialog && typeof el.dialog.showModal === 'function';
+  const MAX_LINES = 30;
+  let resolveConfirm = null;
+
+  function closeConfirm(answer) {
+    const resolve = resolveConfirm;
+    resolveConfirm = null;
+    if (hasDialog && el.dialog.open) el.dialog.close();
+    if (resolve) resolve(answer);
+  }
+
+  function askConfirm(opts) {
+    const lines = opts.lines || [];
+
+    if (!hasDialog) {   // browser senza <dialog>: resta la conferma del browser
+      return Promise.resolve(window.confirm(opts.title + ' ' + opts.text));
+    }
+
+    el.dlgTitle.textContent = opts.title;
+    el.dlgText.textContent = opts.text;
+    el.dlgOkLabel.textContent = opts.cta || 'Elimina';
+
+    el.dlgList.innerHTML = '';
+    lines.slice(0, MAX_LINES).forEach(function (line) {
+      const li = document.createElement('li');
+      li.textContent = line;
+      el.dlgList.appendChild(li);
+    });
+    if (lines.length > MAX_LINES) {
+      const li = document.createElement('li');
+      li.className = 'micro';
+      li.textContent = '… e altri ' + (lines.length - MAX_LINES);
+      el.dlgList.appendChild(li);
+    }
+
+    el.dlgTyped.hidden = !opts.typed;
+    el.dlgWord.value = '';
+    el.dlgOk.disabled = !!opts.typed;
+
+    return new Promise(function (resolve) {
+      resolveConfirm = resolve;
+      el.dialog.showModal();
+      (opts.typed ? el.dlgWord : el.dlgCancel).focus();
+    });
+  }
+
+  if (hasDialog) {
+    el.dlgCancel.addEventListener('click', function () { closeConfirm(false); });
+    el.dlgOk.addEventListener('click', function () {
+      if (!el.dlgOk.disabled) closeConfirm(true);
+    });
+    // Esc: il dialogo si chiude comunque, ma la promessa va risolta a mano.
+    el.dialog.addEventListener('cancel', function (e) {
+      e.preventDefault();
+      closeConfirm(false);
+    });
+    el.dlgWord.addEventListener('input', function () {
+      el.dlgOk.disabled = el.dlgWord.value.trim().toUpperCase() !== 'ELIMINA';
+    });
+    el.dlgWord.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !el.dlgOk.disabled) { e.preventDefault(); closeConfirm(true); }
+    });
+  }
+
+  let busy = false;
+
+  function setBusy(on) {
+    el.delAll.disabled = on;
+    el.refresh.disabled = on;
+    if (on) {
+      el.delSessions.disabled = true;
+      el.delPeople.disabled = true;
+    } else {
+      syncSelection('sessions');
+      syncSelection('people');
+    }
+  }
+
+  /** Esegue la cancellazione, ricarica i dati e riferisce quante righe sono uscite. */
+  function runDelete(promise, describe) {
+    if (busy) return Promise.resolve();
+    busy = true;
+    setBusy(true);
+    el.statsNote.hidden = true;
+
+    return promise.then(function (count) {
+      return load().then(function () { showNote(describe(count)); });
+    }).catch(function (err) {
+      showError(el.statsError, 'Eliminazione non riuscita: ' + err.message);
+    }).then(function () {
+      busy = false;
+      setBusy(false);
+    });
+  }
+
+  function sessionLine(r) {
+    return personName(r.participants) + ' · avviata ' + dateLabel(r.started_at) + ' · ' +
+      (r.completed_at ? 'completa' : (r.answers || []).length + '/12');
+  }
+
+  function askDeleteSessions(ids) {
+    const wanted = {};
+    ids.forEach(function (id) { wanted[id] = true; });
+    const chosen = rows.filter(function (r) { return wanted[r.id]; });
+    if (!chosen.length) return;
+
+    const n = chosen.length;
+    askConfirm({
+      title: n === 1 ? 'Eliminare questa compilazione?' : 'Eliminare ' + n + ' compilazioni?',
+      text: 'Spariscono dal database anche le risposte collegate. I partecipanti restano ' +
+            'registrati, con le loro eventuali altre compilazioni. Non si può annullare.',
+      lines: chosen.map(sessionLine)
+    }).then(function (ok) {
+      if (!ok) return;
+      runDelete(DB.deleteSessions(chosen.map(function (r) { return r.id; })), function (k) {
+        return k === 1 ? 'Compilazione eliminata.' : k + ' compilazioni eliminate.';
+      });
+    });
+  }
+
+  function askDeletePeople(ids) {
+    const wanted = {};
+    ids.forEach(function (id) { wanted[id] = true; });
+    const chosen = people.filter(function (p) { return wanted[p.id]; });
+    if (!chosen.length) return;
+
+    const n = chosen.length;
+    const affected = chosen.reduce(function (sum, p) { return sum + sessionsOf(p.id).length; }, 0);
+
+    const text = affected === 0
+      ? (n === 1 ? 'Non ha nessuna compilazione: sparisce solo la sua registrazione.'
+                 : 'Nessuno di loro ha compilazioni: spariscono solo le registrazioni.') +
+        ' Non si può annullare.'
+      : 'Insieme ' + (n === 1 ? 'al partecipante' : 'ai partecipanti') + ' spariscono ' +
+        affected + (affected === 1 ? ' compilazione' : ' compilazioni') +
+        ' e tutte le risposte. Gli aggregati si ricalcolano senza di ' +
+        (n === 1 ? 'lui' : 'loro') + '. Non si può annullare.';
+
+    askConfirm({
+      title: n === 1 ? 'Eliminare questo partecipante?' : 'Eliminare ' + n + ' partecipanti?',
+      text: text,
+      lines: chosen.map(function (p) {
+        const own = sessionsOf(p.id).length;
+        return p.first_name + ' ' + p.last_name + ' · ' +
+          (own ? own + (own === 1 ? ' compilazione' : ' compilazioni') : 'nessuna compilazione');
+      })
+    }).then(function (ok) {
+      if (!ok) return;
+      runDelete(DB.deleteParticipants(chosen.map(function (p) { return p.id; })), function (k) {
+        return k === 1 ? 'Partecipante eliminato.' : k + ' partecipanti eliminati.';
+      });
+    });
+  }
+
+  function askDeleteAll() {
+    if (!people.length && !rows.length) return;
+
+    askConfirm({
+      title: "Svuotare tutto l'archivio?",
+      text: 'Vengono eliminati ' + people.length +
+            (people.length === 1 ? ' partecipante, ' : ' partecipanti, ') + rows.length +
+            (rows.length === 1 ? ' compilazione ' : ' compilazioni ') +
+            'e tutte le risposte. Se ti servono, esporta prima il CSV: dopo non si recuperano.',
+      lines: [],
+      typed: true,
+      cta: 'Elimina tutto'
+    }).then(function (ok) {
+      if (!ok) return;
+      runDelete(DB.deleteAllData(), function (k) {
+        return 'Archivio svuotato: ' + k + (k === 1 ? ' partecipante' : ' partecipanti') +
+               ' e tutti i dati collegati.';
+      });
     });
   }
 
@@ -340,10 +719,33 @@
 
   /* ------------------------------------------------------------- caricamento */
 
+  /** Partecipanti ricavati dalle sessioni: rete di sicurezza se l'elenco
+   *  completo non arriva (schema più vecchio, richiesta fallita). */
+  function derivePeople() {
+    const seen = {};
+    const out = [];
+    rows.forEach(function (r) {
+      if (r.participants && !seen[r.participants.id]) {
+        seen[r.participants.id] = true;
+        out.push({
+          id: r.participants.id,
+          first_name: r.participants.first_name,
+          last_name: r.participants.last_name,
+          created_at: null
+        });
+      }
+    });
+    return out;
+  }
+
   function load() {
     el.statsError.hidden = true;
-    return DB.fetchOverview().then(function (data) {
-      rows = Array.isArray(data) ? data : [];
+    return Promise.all([
+      DB.fetchOverview(),
+      DB.fetchParticipants().catch(function () { return null; })
+    ]).then(function (res) {
+      rows = Array.isArray(res[0]) ? res[0] : [];
+      people = Array.isArray(res[1]) ? res[1] : derivePeople();
       render();
     }).catch(function (err) {
       showError(el.statsError, 'Lettura dei dati non riuscita: ' + err.message);
@@ -389,16 +791,57 @@
     });
   });
 
-  document.getElementById('btn-refresh').addEventListener('click', load);
+  el.refresh.addEventListener('click', load);
   document.getElementById('btn-csv').addEventListener('click', downloadCsv);
 
   document.getElementById('btn-logout').addEventListener('click', function () {
     DB.signOut().then(function () {
       rows = [];
+      people = [];
+      el.statsNote.hidden = true;
       el.userChip.hidden = true;
       showView('login');
     });
   });
+
+  /* --- selezione: casella «tutti» e caselle di riga (delega sul tbody) --- */
+
+  Object.keys(GROUPS).forEach(function (group) {
+    const g = GROUPS[group];
+
+    g.all.addEventListener('change', function () {
+      boxesOf(group).forEach(function (cb) { cb.checked = g.all.checked; });
+      syncSelection(group);
+    });
+
+    g.tbody.addEventListener('change', function (e) {
+      if (e.target && e.target.classList.contains('row-check')) syncSelection(group);
+    });
+  });
+
+  /* --- cestino di riga --- */
+
+  el.sessionsBody.addEventListener('click', function (e) {
+    const btn = e.target.closest ? e.target.closest('.btn-icon') : null;
+    if (btn) askDeleteSessions([btn.dataset.id]);
+  });
+
+  el.peopleBody.addEventListener('click', function (e) {
+    const btn = e.target.closest ? e.target.closest('.btn-icon') : null;
+    if (btn) askDeletePeople([btn.dataset.id]);
+  });
+
+  /* --- cancellazioni di gruppo e svuotamento --- */
+
+  el.delSessions.addEventListener('click', function () {
+    askDeleteSessions(selectedIds('sessions'));
+  });
+
+  el.delPeople.addEventListener('click', function () {
+    askDeletePeople(selectedIds('people'));
+  });
+
+  el.delAll.addEventListener('click', askDeleteAll);
 
   /* ---------------------------------------------------------------- avvio */
 
