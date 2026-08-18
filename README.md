@@ -53,6 +53,10 @@ visibile** durante la compilazione.
 
 ### Alert automatici
 
+Non compaiono nella schermata del partecipante — che resta punteggio, profilo, dimensioni e radar —
+ma vengono calcolati e salvati con la compilazione: servono al facilitatore, che ne vede la frequenza
+sul gruppo.
+
 1. `media USO − media VAL ≥ 1` → *«Usi l'AI più di quanto la verifichi»*: profilo di rischio,
    intervento prioritario sulla verifica degli output.
 2. `media RESP ≤ 2` → **gap di conformità**: la formazione su dati, rischi, trasparenza e policy va

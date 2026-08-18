@@ -356,8 +356,6 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
 
 .jump-list a:hover { background: #b45309; border-color: #b45309; color: #fff; }
 
-.alerts { display: flex; flex-direction: column; }
-.alerts:empty { display: none; }
 
 /* ---------- Bottoni ---------- */
 

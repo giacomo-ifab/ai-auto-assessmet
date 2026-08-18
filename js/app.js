@@ -57,7 +57,6 @@
     bandName:    document.getElementById('band-name'),
     bandReading: document.getElementById('band-reading'),
     bandPriority: document.getElementById('band-priority'),
-    alerts:      document.getElementById('alerts'),
     dimTbody:    document.getElementById('dim-tbody'),
     dimExtremes: document.getElementById('dim-extremes'),
     missingHint: document.getElementById('progress-missing'),
@@ -315,36 +314,18 @@
     return byDim.filter(function (d) { return d.code === code; })[0].mean;
   }
 
-  function buildAlerts(byDim) {
+  /** Alert automatici sulle due soglie di rischio. Non vengono mostrati al
+   *  partecipante — la sua schermata resta punteggio, profilo e dimensioni —
+   *  ma restano salvati con la compilazione: servono alle statistiche di
+   *  gruppo, dove le etichette leggibili stanno in js/facilitator.js. */
+  function alertCodes(byDim) {
     const out = [];
     const uso = dimMean(byDim, 'USO');
     const val = dimMean(byDim, 'VAL');
     const resp = dimMean(byDim, 'RESP');
 
-    if (uso - val >= 1) {
-      out.push({
-        type: 'alert-warn',
-        code: 'uso_oltre_verifica',
-        icon: 'i-alert',
-        title: "Usi l'AI più di quanto la verifichi",
-        body: 'Uso operativo ' + fmt(uso) + ' contro Valutazione critica ' + fmt(val) +
-              ' (scarto ' + fmt(uso - val) + '). È un profilo di rischio: la produttività cresce più della capacità di ' +
-              "controllare gli output. Intervento prioritario sulla verifica dei risultati — accuratezza dei dati, " +
-              'adeguatezza allo scopo, stima della revisione necessaria.'
-      });
-    }
-
-    if (resp <= 2) {
-      out.push({
-        type: 'alert-danger',
-        code: 'gap_responsabilita',
-        icon: 'i-shield-alert',
-        title: 'Gap di conformità',
-        body: 'Responsabilità ' + fmt(resp) + ' su 4. Trattamento dei dati aziendali, rischi per terzi, ' +
-              "trasparenza e rispetto delle policy non sono presidiati: la formazione su questi aspetti va " +
-              "considerata obbligatoria, non facoltativa (obbligo di alfabetizzazione AI, art. 4 AI Act)."
-      });
-    }
+    if (uso - val >= 1) out.push('uso_oltre_verifica');   // usa l'AI più di quanto la verifichi
+    if (resp <= 2) out.push('gap_responsabilita');        // gap di conformità
 
     return out;
   }
@@ -361,25 +342,6 @@
     el.bandName.textContent = scores.band.name;
     el.bandReading.textContent = scores.band.reading;
     el.bandPriority.textContent = scores.band.priority;
-
-    // Alert automatici
-    el.alerts.innerHTML = '';
-    buildAlerts(scores.byDim).forEach(function (a) {
-      const div = document.createElement('div');
-      div.className = 'alert ' + a.type;
-      div.setAttribute('role', 'note');
-      div.appendChild(icon(a.icon));
-
-      const body = document.createElement('div');
-      body.className = 'alert-body';
-      const strong = document.createElement('strong');
-      strong.textContent = a.title;
-      body.appendChild(strong);
-      body.appendChild(document.createTextNode(a.body));
-      div.appendChild(body);
-
-      el.alerts.appendChild(div);
-    });
 
     // Tabella dimensioni
     el.dimTbody.innerHTML = '';
@@ -652,7 +614,7 @@
           total: scores.total,
           band: scores.band.name,
           dimMeans: dimMeans,
-          alerts: buildAlerts(scores.byDim).map(function (a) { return a.code; })
+          alerts: alertCodes(scores.byDim)
         });
       })
       .catch(function () { /* già segnalato nello stato di salvataggio */ });
