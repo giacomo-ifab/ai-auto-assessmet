@@ -219,3 +219,29 @@ function calibrationLabel(selfMean, allCorrect) {
   if (selfMean >= CAL_SELF_THRESHOLD) return allCorrect ? 'Confermato' : 'Sovrastima';
   return allCorrect ? 'Sottostima' : 'Coerente';
 }
+
+/* ==========================================================================
+   Aree aziendali — elenco di riserva.
+
+   L'elenco vero vive su Supabase (tabella `areas`) ed è governato dal
+   facilitatore: questi valori servono solo quando il salvataggio non è
+   configurato, oppure se la lettura dell'elenco non riesce, così il menù a
+   tendina della registrazione non resta vuoto. Sono gli stessi che
+   supabase/schema.sql inserisce al primo avvio.
+   ========================================================================== */
+
+const DEFAULT_AREAS = [
+  'Produzione',
+  'Commerciale/Vendite',
+  'Marketing',
+  'Amministrazione e Finanza',
+  'HR',
+  'IT',
+  'R&D',
+  'Logistica/Supply Chain',
+  'Customer Service',
+  'Direzione'
+];
+
+/** Etichetta dei partecipanti che non hanno un'area registrata. */
+const AREA_NONE_LABEL = 'Senza area';

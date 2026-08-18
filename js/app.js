@@ -53,6 +53,7 @@
     registerSubmit: document.getElementById('register-submit'),
     registerSkip:   document.getElementById('register-skip'),
     registerNote:   document.getElementById('register-note'),
+    area:           document.getElementById('area'),
     participantChip: document.getElementById('participant-chip'),
     participantName: document.getElementById('participant-name'),
     changeParticipant: document.getElementById('change-participant'),
@@ -735,12 +736,27 @@
       .catch(function () { /* lo stato "non salvato" è già segnalato dal client */ });
   }
 
+  /** Identità del partecipante, area compresa (il nome dell'area serve anche
+   *  senza database, dove non esiste un id). */
+  function identityOf(id, firstName, lastName, area) {
+    return {
+      id: id,
+      firstName: firstName,
+      lastName: lastName,
+      area: area ? area.name : null,
+      areaId: area ? area.id : null,
+      areaValue: el.area.value || null
+    };
+  }
+
   function goToRegistration() {
     if (participant) {
       el.firstName.value = participant.firstName;
       el.lastName.value = participant.lastName;
     }
     el.registerError.hidden = true;
+    // L'elenco aree può essere cambiato dal facilitatore poco prima: si rilegge.
+    loadAreas();
     showView('register');
     setTimeout(function () { el.firstName.focus(); }, 50);
   }
@@ -753,6 +769,81 @@
     body.className = 'alert-body';
     body.textContent = message;
     el.registerError.appendChild(body);
+  }
+
+  /* --------------------------------------------------------- aree aziendali */
+
+  // L'elenco lo governa il facilitatore (tabella `areas` su Supabase). Qui si
+  // legge e si mostra: DEFAULT_AREAS è solo la riserva per quando il
+  // salvataggio non è configurato o la lettura non riesce, così il menù non
+  // resta vuoto e la registrazione non si blocca.
+
+  let areas = [];   // [{ id: uuid|null, name }]
+
+  function fallbackAreas() {
+    return DEFAULT_AREAS.map(function (name) { return { id: null, name: name }; });
+  }
+
+  function renderAreaOptions() {
+    const previous = el.area.value;
+    el.area.innerHTML = '';
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = areas.length ? 'Seleziona…' : 'Nessuna area configurata';
+    el.area.appendChild(placeholder);
+
+    areas.forEach(function (area, idx) {
+      const opt = document.createElement('option');
+      // Senza database l'area non ha un id: si usa l'indice come valore e resta
+      // solo in locale, coerente con il resto della modalità non configurata.
+      opt.value = area.id || 'local:' + idx;
+      opt.textContent = area.name;
+      el.area.appendChild(opt);
+    });
+
+    el.area.disabled = areas.length === 0;
+    // Un'area già scelta in una registrazione precedente resta selezionata.
+    const wanted = previous || (participant && participant.areaValue) || '';
+    if (wanted) el.area.value = wanted;
+    if (!el.area.value && participant && participant.area) {
+      const match = areas.filter(function (a) { return a.name === participant.area; })[0];
+      if (match) el.area.value = match.id || el.area.value;
+    }
+  }
+
+  /** Ricarica l'elenco dal database; in caso di errore tiene quello di riserva. */
+  function loadAreas() {
+    if (!DB.configured) {
+      areas = fallbackAreas();
+      renderAreaOptions();
+      return Promise.resolve(areas);
+    }
+
+    return DB.fetchAreas()
+      .then(function (list) {
+        areas = (Array.isArray(list) ? list : [])
+          .filter(function (a) { return a && a.name; })
+          .map(function (a) { return { id: a.id, name: a.name }; });
+        if (!areas.length) areas = fallbackAreas();
+        renderAreaOptions();
+        return areas;
+      })
+      .catch(function () {
+        areas = fallbackAreas();
+        renderAreaOptions();
+        return areas;
+      });
+  }
+
+  /** Area scelta nel menù: { id, name } oppure null. */
+  function selectedArea() {
+    const value = el.area.value;
+    if (!value) return null;
+    const byId = areas.filter(function (a) { return a.id === value; })[0];
+    if (byId) return byId;
+    const local = /^local:(\d+)$/.exec(value);
+    return local ? areas[Number(local[1])] || null : null;
   }
 
   /* ------------------------------------------------------------------ eventi */
@@ -769,21 +860,29 @@
       return;
     }
 
+    // L'area è obbligatoria se il facilitatore ne ha configurata almeno una.
+    const area = selectedArea();
+    if (areas.length && !area) {
+      registerError("Seleziona l'area aziendale.");
+      el.area.focus();
+      return;
+    }
+
     el.registerError.hidden = true;
     el.registerSubmit.disabled = true;
 
     // Senza DB configurato la compilazione parte comunque, in locale.
     if (!DB.configured) {
       el.registerSubmit.disabled = false;
-      storeParticipant({ id: null, firstName: first, lastName: last });
+      storeParticipant(identityOf(null, first, last, area));
       startSession();
       return;
     }
 
-    DB.createParticipant(first, last)
+    DB.createParticipant(first, last, area && area.id)
       .then(function (row) {
         el.registerSubmit.disabled = false;
-        storeParticipant({ id: row ? row.id : null, firstName: first, lastName: last });
+        storeParticipant(identityOf(row ? row.id : null, first, last, area));
         startSession();
       })
       .catch(function (err) {
@@ -798,7 +897,7 @@
   el.registerSkip.addEventListener('click', function () {
     const first = el.firstName.value.trim() || 'Partecipante';
     const last = el.lastName.value.trim() || 'anonimo';
-    storeParticipant({ id: null, firstName: first, lastName: last });
+    storeParticipant(identityOf(null, first, last, selectedArea()));
     startSession();
   });
 
@@ -962,6 +1061,8 @@
     el.registerNote.textContent =
       'Salvataggio non configurato: nome, cognome e risposte restano solo in questo browser.';
   }
+
+  loadAreas();
 
   // Sessione pronta anche se si arriva al quiz senza passare dall'intro.
   session.items = drawItems();

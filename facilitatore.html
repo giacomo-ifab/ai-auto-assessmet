@@ -22,6 +22,9 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
   </defs>
 </svg>
@@ -98,6 +101,16 @@
     <div class="alert alert-warn" id="stats-error" role="alert" hidden></div>
     <div class="alert alert-ok" id="stats-note" role="status" hidden></div>
 
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab is-active" id="tab-btn-global" role="tab"
+              aria-selected="true" aria-controls="tab-global">Statistiche globali</button>
+      <button type="button" class="tab" id="tab-btn-area" role="tab"
+              aria-selected="false" aria-controls="tab-area">Statistiche per area</button>
+      <button type="button" class="tab" id="tab-btn-areas" role="tab"
+              aria-selected="false" aria-controls="tab-areas">Aree aziendali</button>
+    </div>
+
+    <div id="tab-global" class="tab-panel">
     <div id="stats-empty" class="empty-state" hidden>
       Nessuna compilazione registrata finora.
     </div>
@@ -228,6 +241,7 @@
               <tr>
                 <th scope="col" class="col-check"><span class="sr-only">Selezione</span></th>
                 <th scope="col">Nome</th>
+                <th scope="col">Area</th>
                 <th scope="col">Registrato</th>
                 <th scope="col">Compilazioni</th>
                 <th scope="col">Ultima attività</th>
@@ -258,6 +272,112 @@
             <svg class="icon"><use href="#i-trash"/></svg> Elimina tutti i dati
           </button>
         </div>
+      </div>
+    </div>
+    </div>
+
+    <!-- ============ STATISTICHE PER AREA ============ -->
+    <div id="tab-area" class="tab-panel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h3>Area aziendale</h3>
+          <span class="micro" id="a-hint"></span>
+        </div>
+        <div class="chip-row" id="a-chips"></div>
+      </div>
+
+      <div id="a-body" style="margin-top: 16px">
+        <div class="kpi-grid" id="a-kpi-grid"></div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h3>Medie per dimensione</h3>
+            <ul class="bars" id="a-dim-bars"></ul>
+            <p class="micro" id="a-dim-note"></p>
+          </div>
+          <div class="card">
+            <h3>Radar dell'area</h3>
+            <div class="chart-holder">
+              <canvas id="a-radar" width="520" height="400" role="img"
+                      aria-label="Radar delle medie dell'area, asse da 0 a 4"></canvas>
+            </div>
+            <p class="micro">
+              Asse fisso 0–4, confrontabile con il radar del gruppo. L'anello rosso segnala la
+              sovrastima prevalente in quest'area.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 16px">
+          <div class="card">
+            <h3>Distribuzione dei profili</h3>
+            <ul class="bars" id="a-band-bars"></ul>
+          </div>
+          <div class="card">
+            <h3>Alert rilevati</h3>
+            <ul class="bars" id="a-alert-bars"></ul>
+            <p class="micro">Percentuali sulle compilazioni complete dell'area.</p>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 16px">
+          <div class="card-head">
+            <h3>Item più critici</h3>
+            <span class="micro">media più bassa · minimo 2 risposte</span>
+          </div>
+          <ul class="bars" id="a-item-bars"></ul>
+        </div>
+
+        <div class="grid-2" style="margin-top: 16px">
+          <div class="card">
+            <div class="card-head">
+              <h3>Taratura</h3>
+              <span class="micro">solo per il facilitatore</span>
+            </div>
+            <ul class="bars cal-dims" id="a-cal-dims"></ul>
+            <p class="micro" id="a-cal-note"></p>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Domande di calibrazione</h3>
+              <span class="micro">% di risposte corrette</span>
+            </div>
+            <ul class="bars" id="a-cal-item-bars"></ul>
+          </div>
+        </div>
+      </div>
+
+      <div id="a-empty" class="empty-state" hidden>
+        Nessun partecipante in quest'area.
+      </div>
+    </div>
+
+    <!-- ============ AREE AZIENDALI ============ -->
+    <div id="tab-areas" class="tab-panel" hidden>
+      <div class="card">
+        <div class="card-head">
+          <h3>Aree aziendali</h3>
+          <span class="micro" id="areas-count"></span>
+        </div>
+        <p class="micro">
+          Questo è l'elenco che i partecipanti vedono nel menù a tendina della registrazione: le
+          modifiche valgono per chi si registra da qui in avanti. Rinominare un'area aggiorna anche
+          i partecipanti già registrati in quell'area; eliminarla non cancella nessuno, ma la toglie
+          dalle scelte possibili.
+        </p>
+
+        <div class="alert alert-warn" id="areas-error" role="alert" hidden></div>
+
+        <form class="area-add" id="area-add-form" novalidate>
+          <label class="sr-only" for="area-new">Nuova area</label>
+          <input type="text" id="area-new" maxlength="60" placeholder="Nome della nuova area"
+                 autocomplete="off">
+          <button type="submit" class="btn btn-ghost btn-sm" id="btn-area-add">
+            <svg class="icon"><use href="#i-plus"/></svg> Aggiungi
+          </button>
+        </form>
+
+        <ul class="area-list" id="areas-list"></ul>
       </div>
     </div>
   </section>

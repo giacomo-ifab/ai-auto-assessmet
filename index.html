@@ -80,8 +80,8 @@
     <p class="micro note-privacy">
       <svg class="icon"><use href="#i-database"/></svg>
       <span>
-        Prima di iniziare ti chiediamo nome e cognome: risposte e punteggi vengono registrati sul
-        database del progetto e servono a leggere i risultati in forma aggregata.
+        Prima di iniziare ti chiediamo nome, cognome e area aziendale: risposte e punteggi vengono
+        registrati sul database del progetto e servono a leggere i risultati in forma aggregata.
         Gli item della scala hanno tutti la stessa radice — <strong>«Sono in grado di…»</strong>.
       </span>
     </p>
@@ -108,8 +108,9 @@
       <p class="eyebrow">Registrazione</p>
       <h1>Come ti chiami?</h1>
       <p class="lead">
-        Servono solo nome e cognome: identificano la tua compilazione quando i risultati
-        vengono letti in forma aggregata. Nessuna password, nessuna email.
+        Servono nome, cognome e l'area aziendale in cui lavori: identificano la tua compilazione
+        quando i risultati vengono letti in forma aggregata, per il gruppo e per area.
+        Nessuna password, nessuna email.
       </p>
 
       <form class="card register-card" id="register-form" novalidate>
@@ -122,6 +123,15 @@
           <label for="last-name">Cognome</label>
           <input type="text" id="last-name" name="last-name" autocomplete="family-name"
                  required minlength="2" maxlength="80" placeholder="Es. Rossi">
+        </div>
+        <div class="field">
+          <label for="area">Area aziendale</label>
+          <select id="area" name="area" required>
+            <option value="">Caricamento…</option>
+          </select>
+          <p class="micro" id="area-note">
+            Serve a leggere i risultati per area, oltre che sul totale del gruppo.
+          </p>
         </div>
 
         <div class="alert alert-warn" id="register-error" role="alert" hidden></div>

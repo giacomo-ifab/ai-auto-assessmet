@@ -564,7 +564,8 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
 
 .field label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
 
-.field input {
+.field input,
+.field select {
   font-family: inherit;
   font-size: 0.95rem;
   color: var(--text);
@@ -574,9 +575,13 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
   padding: 10px 12px;
 }
 
+.field select { cursor: pointer; }
+.field select:disabled { color: var(--muted); cursor: not-allowed; }
+
 .field input::placeholder { color: #a5a5a5; }
 
-.field input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
+.field input:focus,
+.field select:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
 
 .register-card .actions { margin-top: 4px; }
 .register-card .micro { margin: 0; }
@@ -868,10 +873,122 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
 .cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .cal-legend .tag { margin: 0 2px; }
 
+/* ---------- Schede della pagina facilitatore ---------- */
+
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.tab {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.tab:hover { color: var(--navy); }
+.tab.is-active { color: var(--navy); border-bottom-color: var(--blue); }
+.tab:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* ---------- Selettore dell'area ---------- */
+
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.chip-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.chip-toggle:hover { border-color: var(--blue); }
+.chip-toggle.is-active { background: var(--navy); border-color: var(--navy); color: #fff; }
+.chip-toggle:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Area non più in elenco, tenuta per i partecipanti già registrati. */
+.chip-toggle.is-legacy { border-style: dashed; }
+
+.chip-count {
+  min-width: 18px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--navy);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-toggle.is-active .chip-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
+
+/* ---------- Elenco delle aree (configurazione) ---------- */
+
+.area-add { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+
+.area-add input {
+  flex: 1 1 220px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+}
+
+.area-add input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
+
+.area-list { list-style: none; margin: 8px 0 0; padding: 0; }
+
+.area-list li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.area-list li.micro { display: block; padding: 12px 0; }
+
+.area-name {
+  flex: 1 1 auto; min-width: 0;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--navy);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+}
+
+.area-name:hover { border-color: var(--border); }
+.area-name:focus { outline: none; background: var(--surface); border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-tint); }
+
+.area-count { flex: none; white-space: nowrap; }
+.area-actions { display: flex; gap: 2px; flex: none; }
+.area-actions .btn-icon:disabled { opacity: 0.3; cursor: default; }
+.area-actions .btn-icon:disabled:hover { color: var(--muted); border-color: transparent; background: none; }
+
 /* ---------- Stampa ---------- */
 
 @media print {
-  .site-header, .site-footer, .actions, .sticky-bar, .bulk-bar, .modal,
+  .site-header, .site-footer, .actions, .sticky-bar, .bulk-bar, .modal, .tabs, .area-add,
   .col-check, .col-act, .cell-check, .cell-act, .card-danger { display: none !important; }
   body { background: #fff; font-size: 11pt; }
   .view { padding: 0; }

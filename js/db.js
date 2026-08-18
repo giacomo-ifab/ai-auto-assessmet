@@ -11,6 +11,10 @@
 
    Letture (solo utenti autenticati, pagina facilitatore):
      signIn / signOut / currentUser / fetchOverview / fetchParticipants
+     fetchAreas — leggibile anche con la sola chiave anon (serve al partecipante)
+
+   Aree aziendali (scritture del solo facilitatore autenticato):
+     createArea / renameArea / deleteArea / reorderAreas
 
    Cancellazioni (solo utenti autenticati, pagina facilitatore):
      deleteParticipants → DELETE /rest/v1/participants?id=in.(…)
@@ -104,9 +108,20 @@ window.DB = (function () {
     return request('/rest/v1/rpc/' + name, { method: 'POST', body: args });
   }
 
-  function createParticipant(firstName, lastName) {
-    return track(rpc('register_participant', { p_first: firstName, p_last: lastName })
-      .then(function (id) { return { id: id, first_name: firstName, last_name: lastName }; }));
+  /** Come rpc(), ma con il token del facilitatore: le funzioni di gestione
+   *  delle aree sono eseguibili solo dal ruolo authenticated. */
+  function authRpc(name, args) {
+    return request('/rest/v1/rpc/' + name, { method: 'POST', body: args, useAuth: true });
+  }
+
+  function createParticipant(firstName, lastName, areaId) {
+    return track(rpc('register_participant', {
+      p_first: firstName,
+      p_last: lastName,
+      p_area_id: areaId || null
+    }).then(function (id) {
+      return { id: id, first_name: firstName, last_name: lastName };
+    }));
   }
 
   function createSession(participantId, itemIds, calItemIds) {
@@ -190,6 +205,35 @@ window.DB = (function () {
     }));
   }
 
+
+  /* ------------------------------------------------------- aree aziendali */
+
+  // L'elenco è l'unica tabella leggibile anche con la chiave pubblica: serve al
+  // partecipante per compilare il menù a tendina prima di registrarsi. Le
+  // scritture passano da funzioni eseguibili solo dal facilitatore autenticato.
+
+  /** Elenco delle aree nell'ordine deciso dal facilitatore. */
+  function fetchAreas() {
+    return request('/rest/v1/areas?select=id,name,position&order=position.asc,name.asc');
+  }
+
+  function createArea(name) {
+    return authRpc('create_area', { p_name: name });
+  }
+
+  function renameArea(id, name) {
+    return authRpc('rename_area', { p_id: id, p_name: name });
+  }
+
+  function deleteArea(id) {
+    return authRpc('delete_area', { p_id: id });
+  }
+
+  /** Riordino: si manda l'elenco completo nell'ordine desiderato. */
+  function reorderAreas(ids) {
+    return authRpc('reorder_areas', { p_ids: ids });
+  }
+
   /* ------------------------------------------------- autenticazione (auth) */
 
   function signIn(email, password) {
@@ -227,7 +271,7 @@ window.DB = (function () {
   /** Sessioni con partecipante, risposte e calibrazione, in una sola richiesta. */
   function fetchOverview(limit) {
     const select = 'id,started_at,updated_at,completed_at,total,band,dim_means,alerts,item_ids,' +
-                   'cal_item_ids,participants(id,first_name,last_name),' +
+                   'cal_item_ids,participants(id,first_name,last_name,area,area_id),' +
                    'answers(item_id,dimension,value),' +
                    'calibrations(item_id,dimension,choice_id,correct)';
     return request('/rest/v1/sessions?select=' + encodeURIComponent(select) +
@@ -252,7 +296,7 @@ window.DB = (function () {
   /** Elenco dei partecipanti registrati, comprese le registrazioni senza
    *  nessun questionario avviato (che in fetchOverview non comparirebbero). */
   function fetchParticipants(limit) {
-    return request('/rest/v1/participants?select=id,first_name,last_name,created_at' +
+    return request('/rest/v1/participants?select=id,first_name,last_name,area,area_id,created_at' +
                    '&order=created_at.desc&limit=' + (limit || 2000), { useAuth: true });
   }
 
@@ -314,6 +358,11 @@ window.DB = (function () {
     fetchOverview: fetchOverview,
     countParticipants: countParticipants,
     fetchParticipants: fetchParticipants,
+    fetchAreas: fetchAreas,
+    createArea: createArea,
+    renameArea: renameArea,
+    deleteArea: deleteArea,
+    reorderAreas: reorderAreas,
     deleteParticipants: deleteParticipants,
     deleteSessions: deleteSessions,
     deleteAllData: deleteAllData

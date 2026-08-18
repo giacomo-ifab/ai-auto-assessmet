@@ -35,6 +35,16 @@
     calNote:     document.getElementById('cal-note'),
     calItemBars: document.getElementById('cal-item-bars'),
     calLegend:   document.getElementById('cal-legend'),
+
+    areaChips:   document.getElementById('a-chips'),
+    areaHint:    document.getElementById('a-hint'),
+    areaBody:    document.getElementById('a-body'),
+    areaEmpty:   document.getElementById('a-empty'),
+    areasList:   document.getElementById('areas-list'),
+    areasCount:  document.getElementById('areas-count'),
+    areasError:  document.getElementById('areas-error'),
+    areaAddForm: document.getElementById('area-add-form'),
+    areaNew:     document.getElementById('area-new'),
     sessionsBody: document.getElementById('sessions-tbody'),
     sessionsCount: document.getElementById('sessions-count'),
     peopleBody:  document.getElementById('people-tbody'),
@@ -92,8 +102,11 @@
   const ITEM_TEXT = {};
   ITEMS.forEach(function (it) { ITEM_TEXT[it.id] = it.text; });
 
-  let rows = [];     // sessioni con partecipante e risposte
-  let people = [];   // partecipanti registrati, anche senza compilazioni
+  let rows = [];         // sessioni con partecipante e risposte
+  let people = [];       // partecipanti registrati, anche senza compilazioni
+  let areas = [];        // aree aziendali configurate, nell'ordine scelto
+  let currentArea = null;// area mostrata nella scheda "Statistiche per area"
+  let globalStats = null;// aggregati del gruppo intero, per il confronto per area
 
   /* --------------------------------------------------------------- utility */
 
@@ -236,16 +249,19 @@
 
   /* ---------------------------------------------------------- statistiche */
 
-  function completed() {
-    return rows.filter(function (r) { return r.completed_at; });
+  /** Le compilazioni concluse di un insieme di righe. Prende la lista come
+   *  argomento perché gli stessi calcoli servono sul gruppo intero e su una
+   *  singola area aziendale. */
+  function completed(list) {
+    return list.filter(function (r) { return r.completed_at; });
   }
 
   /** Medie per dimensione sulle compilazioni complete, dalle risposte grezze. */
-  function dimensionMeans() {
+  function dimensionMeans(list) {
     const acc = {};
     DIMENSIONS.forEach(function (d) { acc[d.code] = { sum: 0, n: 0 }; });
 
-    completed().forEach(function (r) {
+    completed(list).forEach(function (r) {
       (r.answers || []).forEach(function (a) {
         if (acc[a.dimension]) {
           acc[a.dimension].sum += a.value;
@@ -272,9 +288,9 @@
     return stamps.length ? stamps[stamps.length - 1] : null;
   }
 
-  function itemMeans() {
+  function itemMeans(list) {
     const acc = {};
-    completed().forEach(function (r) {
+    completed(list).forEach(function (r) {
       (r.answers || []).forEach(function (a) {
         if (!acc[a.item_id]) acc[a.item_id] = { sum: 0, n: 0, dim: a.dimension };
         acc[a.item_id].sum += a.value;
@@ -365,14 +381,14 @@
   }
 
   /** Distribuzione delle etichette per dimensione calibrata. */
-  function calibrationSummary() {
+  function calibrationSummary(list) {
     const acc = {};
     CAL_DIMS.forEach(function (code) {
       acc[code] = { labels: {}, labelled: 0, correct: 0, answered: 0, meanSum: 0, meanN: 0 };
       CAL_LABELS.forEach(function (l) { acc[code].labels[l] = 0; });
     });
 
-    completed().forEach(function (r) {
+    completed(list).forEach(function (r) {
       const cal = calibrationOf(r);
       CAL_DIMS.forEach(function (code) {
         const cell = cal[code];
@@ -405,9 +421,9 @@
   }
 
   /** Percentuale di risposte corrette per singolo item di calibrazione. */
-  function calItemStats() {
+  function calItemStats(list) {
     const acc = {};
-    completed().forEach(function (r) {
+    completed(list).forEach(function (r) {
       (r.calibrations || []).forEach(function (c) {
         if (!acc[c.item_id]) acc[c.item_id] = { n: 0, ok: 0, dim: c.dimension };
         acc[c.item_id].n += 1;
@@ -466,9 +482,9 @@
     });
   }
 
-  function renderCalibration(summary) {
+  function renderCalibration(summary, t, list) {
     // --- etichette per dimensione
-    el.calDims.innerHTML = '';
+    t.calDims.innerHTML = '';
     summary.forEach(function (s) {
       const li = document.createElement('li');
 
@@ -500,7 +516,7 @@
       });
       li.appendChild(chips);
 
-      el.calDims.appendChild(li);
+      t.calDims.appendChild(li);
     });
 
     // --- priorità formativa: la dimensione con più sovrastime
@@ -509,39 +525,167 @@
     })[0];
 
     if (!worst || !worst.labelled) {
-      el.calNote.textContent = 'Le etichette compaiono al primo questionario concluso. ' +
+      t.calNote.textContent = 'Le etichette compaiono al primo questionario concluso. ' +
         'Non modificano medie, totale e fascia: sono un asse separato.';
     } else if (!worst.labels.Sovrastima) {
-      el.calNote.textContent = 'Nessuna sovrastima rilevata: dove la dichiarazione è alta, ' +
+      t.calNote.textContent = 'Nessuna sovrastima rilevata: dove la dichiarazione è alta, ' +
         'le domande di calibrazione risultano corrette.';
     } else {
-      el.calNote.textContent = 'Priorità formativa: ' + worst.label + ' — ' +
+      t.calNote.textContent = 'Priorità formativa: ' + worst.label + ' — ' +
         worst.labels.Sovrastima + ' compilazion' + (worst.labels.Sovrastima === 1 ? 'e' : 'i') +
         ' su ' + worst.labelled + ' in sovrastima (dichiarazione alta, risposta non corretta).';
     }
 
     // --- % corrette per item
-    const stats = calItemStats();
-    el.calItemBars.innerHTML = '';
+    const stats = calItemStats(list);
+    t.calItemBars.innerHTML = '';
     if (!stats.length) {
       const li = document.createElement('li');
       li.className = 'micro';
       li.textContent = 'Nessuna risposta di calibrazione registrata.';
-      el.calItemBars.appendChild(li);
+      t.calItemBars.appendChild(li);
       return;
     }
     stats.forEach(function (s) {
       const item = CAL_BY_ID[s.id];
       const text = item ? (item.intro || item.text) : '';
       const label = s.id + ' · ' + text.slice(0, 80) + (text.length > 80 ? '…' : '');
-      el.calItemBars.appendChild(
+      t.calItemBars.appendChild(
         bar(label, s.ok + '/' + s.n + ' · ' + pct(s.ok, s.n) + '%', s.rate, s.rate < 0.5));
     });
   }
 
-  function render() {
-    const done = completed();
+  /* -------------------------------------------------- aggregati riutilizzabili */
 
+  // Gli aggregati sono gli stessi per il gruppo intero e per una singola area:
+  // qui si calcolano su una lista di compilazioni e si scrivono in un insieme di
+  // nodi passati come argomento. La vista globale resta quella di prima, la
+  // vista per area riusa lo stesso codice su un sottoinsieme.
+
+  const TARGETS = {
+    global: {
+      kpiGrid: el.kpiGrid,
+      dimBars: el.dimBars,
+      dimNote: el.dimNote,
+      radar: el.radar,
+      bandBars: el.bandBars,
+      alertBars: el.alertBars,
+      itemBars: el.itemBars,
+      calDims: el.calDims,
+      calNote: el.calNote,
+      calItemBars: el.calItemBars
+    },
+    area: {
+      kpiGrid: document.getElementById('a-kpi-grid'),
+      dimBars: document.getElementById('a-dim-bars'),
+      dimNote: document.getElementById('a-dim-note'),
+      radar: document.getElementById('a-radar'),
+      bandBars: document.getElementById('a-band-bars'),
+      alertBars: document.getElementById('a-alert-bars'),
+      itemBars: document.getElementById('a-item-bars'),
+      calDims: document.getElementById('a-cal-dims'),
+      calNote: document.getElementById('a-cal-note'),
+      calItemBars: document.getElementById('a-cal-item-bars')
+    }
+  };
+
+  /** Scarto rispetto al gruppo, con il segno. */
+  function delta(value, reference) {
+    const diff = value - reference;
+    if (Math.abs(diff) < 0.005) return 'in linea col gruppo';
+    return (diff > 0 ? '+' : '−') + fmt(Math.abs(diff)) + ' vs gruppo';
+  }
+
+  /**
+   * @param ctx { rows, peopleCount, peopleHint, targets, reference }
+   *   `reference` è l'aggregato globale: se c'è, accanto ai valori compare il
+   *   confronto. Su liste vuote non si divide per zero: pct() e le medie
+   *   restituiscono 0 e le card si mostrano vuote.
+   */
+  function renderStats(ctx) {
+    const t = ctx.targets;
+    const list = ctx.rows;
+    const ref = ctx.reference || null;
+    const done = completed(list);
+
+    const totals = done.map(function (r) { return r.total; })
+      .filter(function (x) { return typeof x === 'number'; });
+    const avgTotal = totals.length ? totals.reduce(function (a, b) { return a + b; }, 0) / totals.length : 0;
+
+    // --- KPI
+    t.kpiGrid.innerHTML = '';
+    t.kpiGrid.appendChild(kpi('Partecipanti', ctx.peopleCount, ctx.peopleHint));
+    t.kpiGrid.appendChild(kpi('Compilazioni', list.length, done.length + ' complete'));
+    t.kpiGrid.appendChild(kpi('Completamento', pct(done.length, list.length) + '%',
+      (list.length - done.length) + ' interrotte'));
+    t.kpiGrid.appendChild(kpi('Punteggio medio', totals.length ? fmt(avgTotal) : '—',
+      ref && totals.length && ref.totalsCount
+        ? 'su 48 · gruppo ' + fmt(ref.avgTotal)
+        : 'su 48'));
+
+    // --- dimensioni + radar
+    const dims = dimensionMeans(list);
+    t.dimBars.innerHTML = '';
+    dims.forEach(function (d, i) {
+      const refMean = ref ? ref.dims[i].mean : null;
+      const value = fmt(d.mean) + ' / 4' +
+        (refMean !== null && done.length ? ' · ' + delta(d.mean, refMean) : '');
+      t.dimBars.appendChild(bar(d.label, value, d.mean / 4));
+    });
+
+    // Taratura: asse separato. Il radar resta l'autovalutazione, il marcatore
+    // segnala solo le dimensioni in cui prevale la sovrastima.
+    const calSummary = calibrationSummary(list);
+    renderCalibration(calSummary, t, list);
+
+    // Senza compilazioni complete il radar non ha nulla da disegnare: va
+    // nascosto, altrimenti resterebbe visibile il disegno dell'insieme precedente.
+    t.radar.hidden = !done.length;
+    if (done.length) {
+      const sorted = dims.slice().sort(function (a, b) { return b.mean - a.mean; });
+      t.dimNote.textContent = 'Più solida: ' + sorted[0].label + ' (' + fmt(sorted[0].mean) +
+        '). Più fragile: ' + sorted[sorted.length - 1].label + ' (' + fmt(sorted[sorted.length - 1].mean) + ').';
+      window.AIAA_RADAR.draw(t.radar, dims, { mark: overratedDims(calSummary) });
+    } else {
+      t.dimNote.textContent = 'Nessuna compilazione completa: le medie compaiono al primo questionario concluso.';
+    }
+
+    // --- fasce
+    t.bandBars.innerHTML = '';
+    BANDS.forEach(function (b) {
+      const n = done.filter(function (r) { return r.band === b.name; }).length;
+      t.bandBars.appendChild(bar(b.name + ' (' + b.min + '–' + b.max + ')',
+        n + (done.length ? ' · ' + pct(n, done.length) + '%' : ''), done.length ? n / done.length : 0));
+    });
+
+    // --- alert
+    t.alertBars.innerHTML = '';
+    Object.keys(ALERT_LABELS).forEach(function (code) {
+      const n = done.filter(function (r) { return (r.alerts || []).indexOf(code) !== -1; }).length;
+      t.alertBars.appendChild(bar(ALERT_LABELS[code],
+        n + (done.length ? ' · ' + pct(n, done.length) + '%' : ''),
+        done.length ? n / done.length : 0, true));
+    });
+
+    // --- item più critici
+    const items = itemMeans(list).slice(0, 6);
+    t.itemBars.innerHTML = '';
+    if (!items.length) {
+      const li = document.createElement('li');
+      li.className = 'micro';
+      li.textContent = 'Servono almeno due risposte per item.';
+      t.itemBars.appendChild(li);
+    }
+    items.forEach(function (it) {
+      const label = it.id + ' · ' + (ITEM_TEXT[it.id] || '').slice(0, 90) +
+        ((ITEM_TEXT[it.id] || '').length > 90 ? '…' : '');
+      t.itemBars.appendChild(bar(label, fmt(it.mean) + ' / 4 · ' + it.n + ' risp.', it.mean / 4));
+    });
+
+    return { dims: dims, avgTotal: avgTotal, totalsCount: totals.length, doneCount: done.length };
+  }
+
+  function render() {
     // Un partecipante registrato che non ha ancora avviato nulla non produce righe
     // in `rows`, ma deve restare visibile: è uno di quelli da poter cancellare.
     const hasData = rows.length > 0 || people.length > 0;
@@ -550,76 +694,34 @@
     el.loadedAt.textContent = 'Aggiornato alle ' +
       new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
 
-    if (!hasData) return;
+    renderAreasConfig();
 
-    // --- KPI
-    const participants = {};
-    rows.forEach(function (r) { if (r.participants) participants[r.participants.id] = true; });
-    const totals = done.map(function (r) { return r.total; }).filter(function (t) { return typeof t === 'number'; });
-    const avgTotal = totals.length ? totals.reduce(function (a, b) { return a + b; }, 0) / totals.length : 0;
+    if (!hasData) {
+      globalStats = null;
+      renderAreaTab();
+      return;
+    }
 
-    el.kpiGrid.innerHTML = '';
-    el.kpiGrid.appendChild(kpi('Partecipanti', people.length,
-      Object.keys(participants).length + ' con almeno una compilazione'));
-    el.kpiGrid.appendChild(kpi('Compilazioni', rows.length, done.length + ' complete'));
-    el.kpiGrid.appendChild(kpi('Completamento', pct(done.length, rows.length) + '%',
-      (rows.length - done.length) + ' interrotte'));
-    el.kpiGrid.appendChild(kpi('Punteggio medio', totals.length ? fmt(avgTotal) : '—', 'su 48'));
+    const withSession = {};
+    rows.forEach(function (r) { if (r.participants) withSession[r.participants.id] = true; });
 
-    // --- dimensioni + radar
-    const dims = dimensionMeans();
-    el.dimBars.innerHTML = '';
-    dims.forEach(function (d) {
-      el.dimBars.appendChild(bar(d.label, fmt(d.mean) + ' / 4', d.mean / 4));
+    globalStats = renderStats({
+      rows: rows,
+      peopleCount: people.length,
+      peopleHint: Object.keys(withSession).length + ' con almeno una compilazione',
+      targets: TARGETS.global,
+      reference: null
     });
-
-    // Taratura: asse separato. Il radar resta l'autovalutazione, il marcatore
-    // segnala solo le dimensioni in cui prevale la sovrastima.
-    const calSummary = calibrationSummary();
-    renderCalibration(calSummary);
     renderCalLegend();
 
-    if (done.length) {
-      const sorted = dims.slice().sort(function (a, b) { return b.mean - a.mean; });
-      el.dimNote.textContent = 'Più solida: ' + sorted[0].label + ' (' + fmt(sorted[0].mean) +
-        '). Più fragile: ' + sorted[sorted.length - 1].label + ' (' + fmt(sorted[sorted.length - 1].mean) + ').';
-      window.AIAA_RADAR.draw(el.radar, dims, { mark: overratedDims(calSummary) });
-    } else {
-      el.dimNote.textContent = 'Nessuna compilazione completa: le medie compaiono al primo questionario concluso.';
-    }
+    renderSessionsTable();
+    renderPeople();
+    syncSelection('sessions');
+    syncSelection('people');
+    renderAreaTab();
+  }
 
-    // --- fasce
-    el.bandBars.innerHTML = '';
-    BANDS.forEach(function (b) {
-      const n = done.filter(function (r) { return r.band === b.name; }).length;
-      el.bandBars.appendChild(bar(b.name + ' (' + b.min + '–' + b.max + ')',
-        n + (done.length ? ' · ' + pct(n, done.length) + '%' : ''), done.length ? n / done.length : 0));
-    });
-
-    // --- alert
-    el.alertBars.innerHTML = '';
-    Object.keys(ALERT_LABELS).forEach(function (code) {
-      const n = done.filter(function (r) { return (r.alerts || []).indexOf(code) !== -1; }).length;
-      el.alertBars.appendChild(bar(ALERT_LABELS[code],
-        n + (done.length ? ' · ' + pct(n, done.length) + '%' : ''),
-        done.length ? n / done.length : 0, true));
-    });
-
-    // --- item più critici
-    const items = itemMeans().slice(0, 6);
-    el.itemBars.innerHTML = '';
-    if (!items.length) {
-      const li = document.createElement('li');
-      li.className = 'micro';
-      li.textContent = 'Servono almeno due risposte per item.';
-      el.itemBars.appendChild(li);
-    }
-    items.forEach(function (it) {
-      const label = it.id + ' · ' + (ITEM_TEXT[it.id] || '').slice(0, 90) +
-        ((ITEM_TEXT[it.id] || '').length > 90 ? '…' : '');
-      el.itemBars.appendChild(bar(label, fmt(it.mean) + ' / 4 · ' + it.n + ' risp.', it.mean / 4));
-    });
-
+  function renderSessionsTable() {
     // --- tabella compilazioni
     el.sessionsCount.textContent = rows.length + (rows.length === 1 ? ' riga' : ' righe');
     el.sessionsBody.innerHTML = '';
@@ -684,9 +786,6 @@
       el.sessionsBody.appendChild(tr);
     });
 
-    renderPeople();
-    syncSelection('sessions');
-    syncSelection('people');
   }
 
   /* ------------------------------------------------------- partecipanti */
@@ -696,7 +795,7 @@
     el.peopleBody.innerHTML = '';
 
     if (!people.length) {
-      emptyRow(el.peopleBody, 6, 'Nessun partecipante registrato.');
+      emptyRow(el.peopleBody, 7, 'Nessun partecipante registrato.');
       return;
     }
 
@@ -712,6 +811,10 @@
       name.className = 'name';
       name.textContent = label;
       tr.appendChild(name);
+
+      const areaCell = document.createElement('td');
+      areaCell.textContent = areaOf(p);
+      tr.appendChild(areaCell);
 
       const created = document.createElement('td');
       created.textContent = dateLabel(p.created_at);
@@ -729,6 +832,225 @@
 
       tr.appendChild(trashCell(p.id, label));
       el.peopleBody.appendChild(tr);
+    });
+  }
+
+  /* ------------------------------------------------------- aree aziendali */
+
+  // L'elenco vive su Supabase e lo governa questa pagina; i partecipanti lo
+  // leggono al momento della registrazione. Sulle compilazioni resta scritto il
+  // nome dell'area, così la segmentazione storica non si perde se l'area viene
+  // poi eliminata dall'elenco.
+
+  /** Area di un partecipante (o del partecipante di una compilazione). */
+  function areaOf(participant) {
+    const name = participant && participant.area ? String(participant.area).trim() : '';
+    return name || AREA_NONE_LABEL;
+  }
+
+  /**
+   * Voci del selettore: le aree configurate, più quelle che compaiono nei dati
+   * ma non sono (più) in elenco — comprese le persone senza area. Così nessun
+   * partecipante resta fuori da tutte le viste.
+   */
+  function areaOptions() {
+    const counts = {};
+    people.forEach(function (p) {
+      const name = areaOf(p);
+      counts[name] = (counts[name] || 0) + 1;
+    });
+
+    const out = [];
+    const seen = {};
+    areas.forEach(function (a) {
+      seen[a.name] = true;
+      out.push({ name: a.name, count: counts[a.name] || 0, configured: true });
+    });
+    Object.keys(counts).sort().forEach(function (name) {
+      if (!seen[name]) out.push({ name: name, count: counts[name], configured: false });
+    });
+    return out;
+  }
+
+  function rowsOfArea(name) {
+    return rows.filter(function (r) { return areaOf(r.participants) === name; });
+  }
+
+  function peopleOfArea(name) {
+    return people.filter(function (p) { return areaOf(p) === name; });
+  }
+
+  function renderAreaTab() {
+    const options = areaOptions();
+
+    // L'area scelta resta selezionata fra un aggiornamento e l'altro; se
+    // sparisce si ripiega sulla prima che ha partecipanti.
+    if (!options.some(function (o) { return o.name === currentArea; })) {
+      const withPeople = options.filter(function (o) { return o.count > 0; })[0];
+      currentArea = (withPeople || options[0] || { name: null }).name;
+    }
+
+    el.areaChips.innerHTML = '';
+    options.forEach(function (o) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'chip-toggle' + (o.name === currentArea ? ' is-active' : '') +
+        (o.configured ? '' : ' is-legacy');
+      chip.dataset.area = o.name;
+      chip.textContent = o.name;
+      const badge = document.createElement('span');
+      badge.className = 'chip-count';
+      badge.textContent = o.count;
+      chip.appendChild(badge);
+      if (!o.configured) chip.title = 'Area non più in elenco: resta per i partecipanti già registrati';
+      el.areaChips.appendChild(chip);
+    });
+
+    if (!options.length) {
+      el.areaHint.textContent = '';
+      el.areaBody.hidden = true;
+      el.areaEmpty.hidden = false;
+      el.areaEmpty.textContent = 'Nessuna area configurata: aggiungine una nella scheda «Aree aziendali».';
+      return;
+    }
+
+    const areaRows = rowsOfArea(currentArea);
+    const areaPeople = peopleOfArea(currentArea);
+
+    el.areaHint.textContent = areaPeople.length + (areaPeople.length === 1 ? ' partecipante' : ' partecipanti') +
+      ' su ' + people.length + ' del gruppo';
+
+    // Area senza nessuno: si mostra vuota, senza aggregati e senza divisioni per zero.
+    const empty = areaPeople.length === 0 && areaRows.length === 0;
+    el.areaBody.hidden = empty;
+    el.areaEmpty.hidden = !empty;
+    if (empty) {
+      el.areaEmpty.textContent = 'Nessun partecipante in quest’area.';
+      return;
+    }
+
+    renderStats({
+      rows: areaRows,
+      peopleCount: areaPeople.length,
+      peopleHint: 'su ' + people.length + ' del gruppo',
+      targets: TARGETS.area,
+      reference: globalStats
+    });
+  }
+
+  /* ------------------------------------------ configurazione dell'elenco */
+
+  function renderAreasConfig() {
+    const counts = {};
+    people.forEach(function (p) {
+      const name = areaOf(p);
+      counts[name] = (counts[name] || 0) + 1;
+    });
+
+    el.areasCount.textContent = areas.length + (areas.length === 1 ? ' area' : ' aree');
+    el.areasList.innerHTML = '';
+
+    if (!areas.length) {
+      const li = document.createElement('li');
+      li.className = 'micro';
+      li.textContent = 'Elenco vuoto: finché è così, il menù della registrazione resta senza opzioni.';
+      el.areasList.appendChild(li);
+      return;
+    }
+
+    areas.forEach(function (area, idx) {
+      const li = document.createElement('li');
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'area-name';
+      input.value = area.name;
+      input.maxLength = 60;
+      input.dataset.id = area.id;
+      input.setAttribute('aria-label', 'Nome dell’area ' + area.name);
+      li.appendChild(input);
+
+      const n = counts[area.name] || 0;
+      const count = document.createElement('span');
+      count.className = 'micro area-count';
+      count.textContent = n === 1 ? '1 partecipante' : n + ' partecipanti';
+      li.appendChild(count);
+
+      const actions = document.createElement('span');
+      actions.className = 'area-actions';
+      actions.appendChild(areaButton('up', 'i-up', 'Sposta su ' + area.name, area.id, idx === 0));
+      actions.appendChild(areaButton('down', 'i-down', 'Sposta giù ' + area.name, area.id,
+        idx === areas.length - 1));
+      actions.appendChild(areaButton('del', 'i-trash', 'Elimina ' + area.name, area.id, false));
+      li.appendChild(actions);
+
+      el.areasList.appendChild(li);
+    });
+  }
+
+  function areaButton(act, iconId, label, id, disabled) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn-icon';
+    b.dataset.act = act;
+    b.dataset.id = id;
+    b.title = label;
+    b.setAttribute('aria-label', label);
+    b.disabled = Boolean(disabled);
+    b.appendChild(icon(iconId));
+    return b;
+  }
+
+  let areaBusy = false;
+
+  /** Esegue una modifica all'elenco, poi rilegge elenco e dati. */
+  function runAreaOp(promise, message) {
+    if (areaBusy) return Promise.resolve();
+    areaBusy = true;
+    el.areasError.hidden = true;
+
+    return promise
+      .then(function () { return load(); })
+      .then(function () { showNote(message); })
+      .catch(function (err) {
+        showError(el.areasError, 'Modifica non riuscita: ' + areaErrorText(err));
+      })
+      .then(function () { areaBusy = false; });
+  }
+
+  /** I messaggi del database sono espliciti: qui si tiene solo la parte utile. */
+  function areaErrorText(err) {
+    const raw = err && err.message ? err.message : 'errore sconosciuto';
+    const match = /"message":"([^"]+)"/.exec(raw);
+    return match ? match[1] : raw;
+  }
+
+  function moveArea(id, direction) {
+    const idx = areas.findIndex(function (a) { return a.id === id; });
+    const target = idx + direction;
+    if (idx < 0 || target < 0 || target >= areas.length) return;
+
+    const ids = areas.map(function (a) { return a.id; });
+    ids.splice(target, 0, ids.splice(idx, 1)[0]);
+    runAreaOp(DB.reorderAreas(ids), 'Ordine delle aree aggiornato.');
+  }
+
+  function askDeleteArea(id) {
+    const area = areas.filter(function (a) { return a.id === id; })[0];
+    if (!area) return;
+
+    const n = peopleOfArea(area.name).length;
+    askConfirm({
+      title: 'Eliminare l’area «' + area.name + '»?',
+      text: n
+        ? 'Non cancella nessun partecipante: i ' + n + ' già registrati in quest’area restano, ' +
+          'con la loro etichetta, e continuano a comparire nelle statistiche per area. ' +
+          'L’area non sarà più proponibile a chi si registra.'
+        : 'Nessun partecipante è registrato in quest’area: sparisce solo dal menù della registrazione.',
+      cta: 'Elimina'
+    }).then(function (ok) {
+      if (!ok) return;
+      runAreaOp(DB.deleteArea(id), 'Area eliminata.');
     });
   }
 
@@ -950,7 +1272,8 @@
       .concat(ITEMS.map(function (it) { return it.id; }))
       .concat(['cal_item_estratti'])
       .concat(CAL_ITEMS.map(function (it) { return it.id; }))
-      .concat(CAL_DIMS.map(function (code) { return 'taratura_' + code; }));
+      .concat(CAL_DIMS.map(function (code) { return 'taratura_' + code; }))
+      .concat(['area']);
 
     const lines = [header.join(';')];
 
@@ -978,7 +1301,7 @@
         return given ? (given.correct ? 1 : 0) : '';   // vuoto se non estratto o senza risposta
       })).concat(CAL_DIMS.map(function (code) {
         return (cal[code] && cal[code].label) || '';
-      }));
+      })).concat([r.participants && r.participants.area ? r.participants.area : '']);
 
       lines.push(cells.map(function (c) {
         const s = String(c);
@@ -1025,10 +1348,16 @@
     el.statsError.hidden = true;
     return Promise.all([
       DB.fetchOverview(),
-      DB.fetchParticipants().catch(function () { return null; })
+      DB.fetchParticipants().catch(function () { return null; }),
+      DB.fetchAreas().catch(function () { return null; })
     ]).then(function (res) {
       rows = Array.isArray(res[0]) ? res[0] : [];
       people = Array.isArray(res[1]) ? res[1] : derivePeople();
+      // Se l'elenco aree non arriva si tiene quello già in memoria: le
+      // statistiche per area restano leggibili dai dati dei partecipanti.
+      if (Array.isArray(res[2])) {
+        areas = res[2].filter(function (a) { return a && a.name; });
+      }
       render();
     }).catch(function (err) {
       showError(el.statsError, 'Lettura dei dati non riuscita: ' + err.message);
@@ -1085,6 +1414,88 @@
       el.userChip.hidden = true;
       showView('login');
     });
+  });
+
+  /* --- schede: globali / per area / configurazione dell'elenco --- */
+
+  const TABS = [
+    { btn: 'tab-btn-global', panel: 'tab-global' },
+    { btn: 'tab-btn-area', panel: 'tab-area' },
+    { btn: 'tab-btn-areas', panel: 'tab-areas' }
+  ].map(function (t) {
+    return { button: document.getElementById(t.btn), panel: document.getElementById(t.panel) };
+  });
+
+  function showTab(index) {
+    TABS.forEach(function (t, i) {
+      const active = i === index;
+      t.button.classList.toggle('is-active', active);
+      t.button.setAttribute('aria-selected', active ? 'true' : 'false');
+      t.panel.hidden = !active;
+    });
+  }
+
+  TABS.forEach(function (t, i) {
+    t.button.addEventListener('click', function () { showTab(i); });
+  });
+
+  /* --- selettore dell'area nelle statistiche per area --- */
+
+  el.areaChips.addEventListener('click', function (e) {
+    const chip = e.target.closest ? e.target.closest('.chip-toggle') : null;
+    if (!chip) return;
+    currentArea = chip.dataset.area;
+    renderAreaTab();
+  });
+
+  /* --- configurazione dell'elenco aree --- */
+
+  el.areaAddForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const name = el.areaNew.value.trim();
+    if (!name) {
+      showError(el.areasError, 'Scrivi il nome della nuova area.');
+      el.areaNew.focus();
+      return;
+    }
+    runAreaOp(DB.createArea(name), 'Area «' + name + '» aggiunta.').then(function () {
+      el.areaNew.value = '';
+    });
+  });
+
+  el.areasList.addEventListener('click', function (e) {
+    const btn = e.target.closest ? e.target.closest('.btn-icon') : null;
+    if (!btn || btn.disabled) return;
+    const id = btn.dataset.id;
+    if (btn.dataset.act === 'up') moveArea(id, -1);
+    else if (btn.dataset.act === 'down') moveArea(id, 1);
+    else if (btn.dataset.act === 'del') askDeleteArea(id);
+  });
+
+  // Rinomina: si conferma uscendo dal campo o con Invio.
+  el.areasList.addEventListener('change', function (e) {
+    const input = e.target;
+    if (!input.classList || !input.classList.contains('area-name')) return;
+
+    const area = areas.filter(function (a) { return a.id === input.dataset.id; })[0];
+    const name = input.value.trim();
+
+    if (!area) return;
+    if (!name) {
+      input.value = area.name;
+      showError(el.areasError, 'Il nome dell’area non può essere vuoto.');
+      return;
+    }
+    if (name === area.name) return;
+
+    runAreaOp(DB.renameArea(area.id, name), 'Area rinominata in «' + name + '».');
+  });
+
+  el.areasList.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('area-name')) {
+      e.preventDefault();
+      e.target.blur();
+    }
   });
 
   /* --- selezione: casella «tutti» e caselle di riga (delega sul tbody) --- */

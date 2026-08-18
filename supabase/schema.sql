@@ -8,15 +8,63 @@ create extension if not exists pgcrypto;
 
 -- ----------------------------------------------------------------- tabelle
 
+-- Aree aziendali: elenco configurato dal facilitatore, letto dai partecipanti
+-- al momento della registrazione. È configurazione, non un dato personale:
+-- è l'unica tabella leggibile anche con la chiave pubblica.
+create table if not exists public.areas (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null check (char_length(btrim(name)) between 1 and 60),
+  position    smallint not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+comment on table public.areas is
+  'Aree aziendali per la segmentazione dei partecipanti. Ordinate per position; '
+  'i nomi sono unici a meno di spazi e maiuscole.';
+
+create unique index if not exists areas_name_key on public.areas (lower(btrim(name)));
+create index if not exists areas_position_idx    on public.areas (position, name);
+
+-- Set di default, inserito solo se la tabella è vuota: da qui in poi l'elenco
+-- lo governa il facilitatore. Lo stesso elenco sta in DEFAULT_AREAS di
+-- js/items.js, usato quando il salvataggio non è configurato.
+insert into public.areas (name, position)
+select v.name, v.pos
+from (values
+  ('Produzione', 1),
+  ('Commerciale/Vendite', 2),
+  ('Marketing', 3),
+  ('Amministrazione e Finanza', 4),
+  ('HR', 5),
+  ('IT', 6),
+  ('R&D', 7),
+  ('Logistica/Supply Chain', 8),
+  ('Customer Service', 9),
+  ('Direzione', 10)
+) as v(name, pos)
+where not exists (select 1 from public.areas);
+
 create table if not exists public.participants (
   id          uuid primary key default gen_random_uuid(),
   first_name  text not null check (char_length(btrim(first_name)) between 1 and 80),
   last_name   text not null check (char_length(btrim(last_name))  between 1 and 80),
+  area_id     uuid references public.areas(id) on delete set null,
+  area        text,                            -- nome dell'area alla registrazione
   created_at  timestamptz not null default now()
 );
 
 comment on table public.participants is
-  'Registrazione partecipante: solo nome e cognome, nessuna autenticazione.';
+  'Registrazione partecipante: nome, cognome e area aziendale, nessuna autenticazione.';
+
+comment on column public.participants.area is
+  'Nome dell''area copiato alla registrazione: se l''area viene eliminata dall''elenco '
+  'la segmentazione storica resta leggibile. rename_area lo tiene allineato.';
+
+-- Per i progetti creati prima della segmentazione per area.
+alter table public.participants add column if not exists area_id uuid references public.areas(id) on delete set null;
+alter table public.participants add column if not exists area text;
+
+create index if not exists participants_area_idx on public.participants (area);
 
 create table if not exists public.sessions (
   id              uuid primary key default gen_random_uuid(),
@@ -112,10 +160,19 @@ create trigger calibrations_touch_session
 -- La lettura resta riservata agli utenti autenticati (il facilitatore, creato a
 -- mano in Authentication → Users).
 
+alter table public.areas         enable row level security;
 alter table public.participants  enable row level security;
 alter table public.sessions      enable row level security;
 alter table public.answers       enable row level security;
 alter table public.calibrations  enable row level security;
+
+-- Eccezione motivata: l'elenco delle aree è leggibile da tutti, perché il
+-- partecipante deve poterlo mostrare nel menù a tendina prima di registrarsi.
+-- Non contiene dati di nessuno. In scrittura resta chiuso: si passa dalle
+-- funzioni più sotto, eseguibili solo dal facilitatore autenticato.
+drop policy if exists "areas select all" on public.areas;
+create policy "areas select all" on public.areas
+  for select to anon, authenticated using (true);
 
 -- Policy della prima versione dello schema, se presenti: non servono più.
 drop policy if exists "participants insert anon" on public.participants;
@@ -141,6 +198,8 @@ create policy "calibrations select auth" on public.calibrations
   for select to authenticated using (true);
 
 grant usage on schema public to anon, authenticated;
+grant select on public.areas to anon, authenticated;
+revoke insert, update, delete on public.areas        from anon;
 revoke insert, update, delete on public.participants from anon;
 revoke insert, update, delete on public.sessions     from anon;
 revoke insert, update, delete on public.answers      from anon;
@@ -186,12 +245,21 @@ grant delete on public.participants, public.sessions, public.answers, public.cal
 -- Funzioni SECURITY DEFINER: girano con i privilegi del proprietario, quindi
 -- scrivono sulle tabelle chiuse, ma solo dopo aver validato gli argomenti.
 
-create or replace function public.register_participant(p_first text, p_last text)
+-- Firma cambiata con l'arrivo delle aree: la versione a due argomenti va via,
+-- altrimenti create or replace lascerebbe un overload che il client non usa più.
+drop function if exists public.register_participant(text, text);
+
+create or replace function public.register_participant(
+  p_first   text,
+  p_last    text,
+  p_area_id uuid default null
+)
 returns uuid
 language plpgsql security definer set search_path = public
 as $$
 declare
-  v_id uuid;
+  v_id   uuid;
+  v_area text;
 begin
   p_first := btrim(coalesce(p_first, ''));
   p_last  := btrim(coalesce(p_last, ''));
@@ -200,11 +268,108 @@ begin
     raise exception 'nome e cognome sono obbligatori (almeno due caratteri)' using errcode = '22023';
   end if;
 
-  insert into participants (first_name, last_name)
-  values (left(p_first, 80), left(p_last, 80))
+  -- Il nome dell'area lo risolve il server: il client manda solo l'id, così
+  -- non può scrivere un'etichetta che non esiste nell'elenco configurato.
+  if p_area_id is not null then
+    select name into v_area from areas where id = p_area_id;
+    if v_area is null then
+      raise exception 'area aziendale inesistente' using errcode = '23503';
+    end if;
+  end if;
+
+  insert into participants (first_name, last_name, area_id, area)
+  values (left(p_first, 80), left(p_last, 80), p_area_id, v_area)
   returning id into v_id;
 
   return v_id;
+end;
+$$;
+
+-- ------------------------------------------------- gestione delle aree
+-- Solo il facilitatore: sono SECURITY DEFINER ma il privilegio di esecuzione
+-- viene dato al solo ruolo `authenticated` (vedi i grant in fondo), quindi con
+-- la chiave pubblica non sono nemmeno chiamabili.
+
+create or replace function public.create_area(p_name text)
+returns uuid
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_id  uuid;
+  v_pos smallint;
+begin
+  p_name := left(btrim(coalesce(p_name, '')), 60);
+  if char_length(p_name) < 1 then
+    raise exception 'il nome dell''area è obbligatorio' using errcode = '22023';
+  end if;
+
+  select coalesce(max(position), 0) + 1 into v_pos from areas;
+
+  insert into areas (name, position) values (p_name, v_pos)
+  returning id into v_id;
+
+  return v_id;
+exception
+  when unique_violation then
+    raise exception 'esiste già un''area con questo nome' using errcode = '23505';
+end;
+$$;
+
+/* Rinomina: aggiorna anche l'etichetta copiata sui partecipanti di quell'area,
+   così le statistiche per area non si spezzano in due gruppi. */
+create or replace function public.rename_area(p_id uuid, p_name text)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  p_name := left(btrim(coalesce(p_name, '')), 60);
+  if char_length(p_name) < 1 then
+    raise exception 'il nome dell''area è obbligatorio' using errcode = '22023';
+  end if;
+
+  update areas set name = p_name where id = p_id;
+  if not found then
+    raise exception 'area inesistente' using errcode = '22023';
+  end if;
+
+  update participants set area = p_name where area_id = p_id;
+exception
+  when unique_violation then
+    raise exception 'esiste già un''area con questo nome' using errcode = '23505';
+end;
+$$;
+
+/* Eliminazione: i partecipanti restano, con il nome dell'area già copiato
+   (area_id va a null per la foreign key). La segmentazione storica non si
+   perde, l'area semplicemente non è più proponibile ai nuovi iscritti. */
+create or replace function public.delete_area(p_id uuid)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  delete from areas where id = p_id;
+  if not found then
+    raise exception 'area inesistente' using errcode = '22023';
+  end if;
+end;
+$$;
+
+/* Riordino: la posizione di ciascuna area è l'indice nell'array ricevuto.
+   Il client manda sempre l'elenco completo nell'ordine che vuole ottenere;
+   le eventuali aree non elencate mantengono la posizione che avevano. */
+create or replace function public.reorder_areas(p_ids uuid[])
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if p_ids is null or array_length(p_ids, 1) is null then
+    raise exception 'nessuna area da riordinare' using errcode = '22023';
+  end if;
+
+  update areas a
+     set position = idx.pos
+    from (select unnest(p_ids) as id, generate_subscripts(p_ids, 1)::smallint as pos) idx
+   where a.id = idx.id;
 end;
 $$;
 
@@ -369,14 +534,24 @@ begin
 end;
 $$;
 
-revoke all on function public.register_participant(text, text) from public;
+revoke all on function public.register_participant(text, text, uuid) from public;
+revoke all on function public.create_area(text) from public;
+revoke all on function public.rename_area(uuid, text) from public;
+revoke all on function public.delete_area(uuid) from public;
+revoke all on function public.reorder_areas(uuid[]) from public;
 revoke all on function public.start_session(uuid, text[], text, text[]) from public;
 revoke all on function public.save_answer(uuid, text, text, smallint, smallint) from public;
 revoke all on function public.save_answers(uuid, jsonb) from public;
 revoke all on function public.save_calibration(uuid, text, text, text, boolean, smallint) from public;
 revoke all on function public.complete_session(uuid, smallint, text, jsonb, text[]) from public;
 
-grant execute on function public.register_participant(text, text) to anon, authenticated;
+grant execute on function public.register_participant(text, text, uuid) to anon, authenticated;
+
+-- Gestione dell'elenco aree: solo il facilitatore autenticato.
+grant execute on function public.create_area(text) to authenticated;
+grant execute on function public.rename_area(uuid, text) to authenticated;
+grant execute on function public.delete_area(uuid) to authenticated;
+grant execute on function public.reorder_areas(uuid[]) to authenticated;
 grant execute on function public.start_session(uuid, text[], text, text[]) to anon, authenticated;
 grant execute on function public.save_answer(uuid, text, text, smallint, smallint) to anon, authenticated;
 grant execute on function public.save_answers(uuid, jsonb) to anon, authenticated;
@@ -420,5 +595,17 @@ create or replace view public.v_calibrazione_item with (security_invoker = true)
   group by c.item_id, c.dimension
   order by pct_corrette asc;
 
-grant select on public.v_sessioni_complete, public.v_medie_item, public.v_calibrazione_item
-  to authenticated;
+-- Segmentazione per area: i partecipanti senza area finiscono in un gruppo a
+-- parte invece di sparire dal conteggio.
+create or replace view public.v_aree with (security_invoker = true) as
+  select coalesce(nullif(btrim(p.area), ''), 'Senza area')                        as area,
+         count(distinct p.id)                                                     as partecipanti,
+         count(s.id) filter (where s.completed_at is not null)                    as compilazioni_complete,
+         round(avg(s.total) filter (where s.completed_at is not null)::numeric, 2) as punteggio_medio
+  from public.participants p
+  left join public.sessions s on s.participant_id = p.id
+  group by 1
+  order by partecipanti desc, area;
+
+grant select on public.v_sessioni_complete, public.v_medie_item, public.v_calibrazione_item,
+  public.v_aree to authenticated;
