@@ -108,6 +108,11 @@ body {
 .site-footer { margin-top: 48px; border-top: 1px solid var(--border); background: var(--surface); padding: 20px 0 32px; }
 .site-footer .micro { margin: 0; max-width: 70ch; }
 
+/* Il logo porta con sé la dicitura completa in tracciati: va tenuto alla sua
+   larghezza naturale (433px), altrimenti la riga di testo diventa illeggibile. */
+.footer-brand { display: flex; justify-content: center; padding-top: 8px; }
+.footer-logo { width: 100%; max-width: 433px; height: auto; display: block; }
+
 /* ---------- Tipografia ---------- */
 
 h1 {

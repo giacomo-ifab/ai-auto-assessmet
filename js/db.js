@@ -6,7 +6,7 @@
      createParticipant → POST /rest/v1/participants
      createSession     → POST /rest/v1/sessions
      queueAnswer       → POST /rest/v1/answers  (upsert, con debounce per item)
-     saveCalibration   → rpc save_calibration  (item di calibrazione, una volta sola)
+     saveCalibration   → rpc save_calibration  (item di calibrazione, modificabile fino al calcolo)
      completeSession   → PATCH /rest/v1/sessions?id=eq.<id>
 
    Letture (solo utenti autenticati, pagina facilitatore):
@@ -118,8 +118,8 @@ window.DB = (function () {
     }).then(function (id) { return { id: id }; }));
   }
 
-  /** Item di calibrazione: una scrittura sola, subito, senza debounce.
-   *  Un secondo invio sullo stesso item viene ignorato dal database. */
+  /** Item di calibrazione: scrittura immediata, senza debounce. Se il
+   *  partecipante cambia scelta prima del calcolo, il database aggiorna la riga. */
   function saveCalibration(sessionId, cal) {
     if (!configured || !sessionId) return Promise.resolve(null);
     return track(rpc('save_calibration', {

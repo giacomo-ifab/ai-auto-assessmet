@@ -15,6 +15,8 @@
   const TOTAL_ITEMS = DIMENSIONS.reduce((n, d) => n + d.quota, 0); // 12
   const TOTAL_QUESTIONS = TOTAL_ITEMS + CAL_TOTAL;                 // 16
 
+  const LOCKED_NOTE = 'Il risultato è già stato calcolato: questa risposta non è più modificabile.';
+
   /** Stato della sessione corrente */
   const session = {
     items: [],            // 12 item della scala, nell'ordine di estrazione
@@ -22,6 +24,7 @@
     list: [],             // le 16 domande nell'ordine mostrato: { kind, item }
     answers: new Map(),   // id item -> 1..4
     calAnswers: new Map(),// id item di calibrazione -> { choiceId, correct }
+    calLocked: false,     // true dopo il calcolo: la calibrazione non si cambia più
     validated: false,     // true dopo il primo tentativo di calcolo
     dbId: null            // id della riga sessions su Supabase, null se non salvata
   };
@@ -30,7 +33,7 @@
   const HOW_IT_WORKS = [
     TOTAL_ITEMS + ' item estratti casualmente da una banca di 30.',
     CAL_TOTAL + ' domande a scelta multipla su situazioni concrete, mescolate fra gli item: ' +
-      'si risponde una volta sola e non cambiano il punteggio.',
+      'si possono cambiare fino al calcolo e non entrano nel punteggio.',
     'Sugli item della scala non ci sono risposte giuste o sbagliate: si misura la padronanza dichiarata.',
     'Il calcolo parte solo quando tutte le risposte sono complete.',
     'Ogni nuova sessione propone una selezione diversa di domande.'
@@ -284,7 +287,7 @@
     const given = session.calAnswers.get(item.id) || null;
 
     const li = document.createElement('li');
-    li.className = 'item item-cal' + (given ? ' is-locked' : '');
+    li.className = 'item item-cal' + (session.calLocked ? ' is-locked' : '');
     li.id = 'item-' + (idx + 1);
 
     const fs = document.createElement('fieldset');
@@ -321,12 +324,10 @@
       input.type = 'radio';
       input.name = 'c_' + item.id;
       input.value = opt.id;
-      if (given) {
-        input.disabled = true;
-        if (given.choiceId === opt.id) {
-          input.checked = true;
-          label.classList.add('is-selected');
-        }
+      input.disabled = session.calLocked;
+      if (given && given.choiceId === opt.id) {
+        input.checked = true;
+        label.classList.add('is-selected');
       }
 
       const mark = document.createElement('span');
@@ -349,14 +350,25 @@
     const locked = document.createElement('p');
     locked.className = 'cal-locked';
     locked.appendChild(icon('i-lock'));
-    locked.appendChild(document.createElement('span')).textContent =
-      'Risposta registrata: non è modificabile.';
-    locked.hidden = !given;
+    locked.appendChild(document.createElement('span')).textContent = LOCKED_NOTE;
+    locked.hidden = !session.calLocked;
     fs.appendChild(locked);
 
     li.appendChild(fs);
     if (given) li.classList.add('is-answered');
     return li;
+  }
+
+  /** Dopo il calcolo le scelte di calibrazione non si toccano più: il database
+   *  non le accetterebbe comunque, perché la sessione è chiusa. */
+  function lockCalibration() {
+    session.calLocked = true;
+    el.itemList.querySelectorAll('.item-cal').forEach(function (li) {
+      li.classList.add('is-locked');
+      li.querySelectorAll('.cal-opt input').forEach(function (input) { input.disabled = true; });
+      const note = li.querySelector('.cal-locked');
+      if (note) note.hidden = false;
+    });
   }
 
   function renderItems() {
@@ -696,6 +708,7 @@
     session.list = buildList(session.items, session.calItems);
     session.answers.clear();
     session.calAnswers.clear();
+    session.calLocked = false;
     session.validated = false;
     session.dbId = null;
     clearValidation();
@@ -818,11 +831,12 @@
     }
   });
 
-  /** Scelta su un item di calibrazione: si registra una volta sola, le opzioni
-   *  si bloccano e al partecipante non viene detto se ha risposto correttamente. */
+  /** Scelta su un item di calibrazione: si può cambiare fino al calcolo del
+   *  risultato, dopo il quale le opzioni si bloccano. Al partecipante non viene
+   *  detto se ha risposto correttamente, né prima né dopo. */
   function onCalibrationChoice(input) {
     const itemId = input.name.slice(2);
-    if (session.calAnswers.has(itemId)) return;
+    if (session.calLocked) return;
 
     const item = session.calItems.filter(function (it) { return it.id === itemId; })[0];
     if (!item) return;
@@ -832,13 +846,10 @@
     session.calAnswers.set(itemId, given);
 
     const li = input.closest('.item');
-    li.classList.add('is-locked', 'is-answered');
+    li.classList.add('is-answered');
     li.querySelectorAll('.cal-opt').forEach(function (opt) {
       opt.classList.toggle('is-selected', opt.contains(input));
-      opt.querySelector('input').disabled = true;
     });
-    const locked = li.querySelector('.cal-locked');
-    if (locked) locked.hidden = false;
 
     updateProgress();
     if (session.validated) showValidation(markMissing());
@@ -869,6 +880,7 @@
     }
 
     showValidation([]);
+    lockCalibration();
     const scores = computeScores();
     renderResults(scores);
     showView('results');

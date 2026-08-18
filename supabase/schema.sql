@@ -61,12 +61,13 @@ create table if not exists public.calibrations (
   correct      boolean not null,
   position     smallint,                         -- posizione nella lista mostrata (1-16)
   answered_at  timestamptz not null default now(),
-  primary key (session_id, item_id)              -- una sola risposta per item
+  primary key (session_id, item_id)              -- una riga per item, aggiornabile
 );
 
 comment on table public.calibrations is
   'Risposte agli item di calibrazione: asse separato, non entra in punteggi né fasce. '
-  'Si risponde una volta sola: la chiave primaria e save_calibration ignorano il secondo tentativo.';
+  'La scelta è modificabile fino al calcolo del risultato: dopo, con completed_at valorizzato, '
+  'save_calibration rifiuta.';
 
 create index if not exists sessions_participant_idx on public.sessions (participant_id);
 create index if not exists sessions_started_idx     on public.sessions (started_at desc);
@@ -301,9 +302,10 @@ begin
 end;
 $$;
 
-/* Un item di calibrazione, appena il partecipante scegle un'opzione.
-   Il secondo tentativo sullo stesso item viene ignorato senza errore: la prima
-   risposta è quella che conta, e la UI blocca comunque le opzioni. */
+/* Un item di calibrazione, appena il partecipante sceglie un'opzione.
+   La scelta si può cambiare fino al calcolo del risultato, quindi il conflitto
+   aggiorna la riga; dopo la chiusura della sessione il controllo qui sotto
+   rifiuta comunque, perché completed_at non è più null. */
 create or replace function public.save_calibration(
   p_session   uuid,
   p_item      text,
@@ -331,7 +333,11 @@ begin
           left(lower(btrim(p_choice)), 8),
           coalesce(p_correct, false),
           p_position)
-  on conflict (session_id, item_id) do nothing;
+  on conflict (session_id, item_id) do update
+    set choice_id = excluded.choice_id,
+        correct = excluded.correct,
+        position = excluded.position,
+        answered_at = now();
 end;
 $$;
 

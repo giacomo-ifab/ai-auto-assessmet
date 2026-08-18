@@ -55,10 +55,10 @@ database (`a`…`d`) indica l'opzione della banca, non la posizione mostrata.
   2. ci provo, ma con esiti incerti o con supporto
   3. lo faccio in autonomia nel mio lavoro corrente
   4. lo faccio bene e riesco a spiegarlo o insegnarlo ad altri
-- Item di calibrazione: quattro opzioni, **si risponde una volta sola**. Alla scelta le opzioni si
-  bloccano e compare «Risposta registrata». Nessun timer, nessuna penalizzazione e **nessun
-  riscontro** sull'esito: né qui, né nella schermata dei risultati. «Azzera le risposte» ripulisce
-  solo la scala.
+- Item di calibrazione: quattro opzioni, **modificabili fino a «Calcola il risultato»**; dopo il
+  calcolo si bloccano e compare la nota che non sono più modificabili. Nessun timer, nessuna
+  penalizzazione e **nessun riscontro** sull'esito: né durante la compilazione, né nella schermata
+  dei risultati. «Azzera le risposte» ripulisce solo la scala.
 - Nessun calcolo prima che tutte le 16 risposte siano presenti: le domande mancanti vengono
   segnalate inline (bordo, etichetta «Risposta mancante») e riepilogate con link di salto.
 
@@ -116,6 +116,7 @@ sul gruppo.
 index.html            intro, registrazione, questionario, risultati + sprite delle icone
 facilitatore.html     login e statistiche di gruppo
 css/style.css         design system: palette IFAB, card arrotondate, tipografia Geist
+img/logo-ifab.svg     logo IFAB nel footer; la dicitura completa è nei tracciati del file
 js/config.js          URL e chiave anon del progetto Supabase (da compilare)
 js/items.js           banca item, dimensioni con quote, scala, fasce, item di calibrazione
 js/db.js              client REST Supabase: scritture, login, letture aggregate
@@ -138,7 +139,7 @@ progressivamente, così restano tracciate anche le compilazioni interrotte:
 | registrazione | `register_participant(nome, cognome)` → id |
 | avvio questionario | `start_session(id, item_ids, user_agent, cal_item_ids)` → id sessione |
 | ogni risposta della scala | `save_answer(...)` (debounce 800 ms, un retry) |
-| ogni item di calibrazione | `save_calibration(...)` (subito, senza debounce; il secondo invio sullo stesso item viene ignorato) |
+| ogni item di calibrazione | `save_calibration(...)` (subito, senza debounce; una nuova scelta sullo stesso item aggiorna la riga) |
 | calcolo del risultato | `save_answers(...)` completo + reinvio della calibrazione + `complete_session(totale, fascia, medie, alert)` |
 
 Tabelle: `participants`, `sessions`, `answers`, `calibrations` (più le viste `v_sessioni_complete`,
@@ -237,7 +238,8 @@ Il modello di sicurezza è quello standard di un'app statica su Supabase:
   il privilegio `delete`, che alla chiave anon resta revocato): un partecipante non può cancellare
   nulla, nemmeno le proprie risposte. Verificato sul progetto: con la chiave anon una DELETE
   risponde `42501 permission denied`;
-- una sessione conclusa non è più modificabile: `complete_session` e `save_answer` rifiutano;
+- una sessione conclusa non è più modificabile: `complete_session`, `save_answer` e
+  `save_calibration` rifiutano;
 - resta possibile, per chi estragga la chiave dal codice, creare partecipanti e sessioni finte
   (è inevitabile senza autenticazione dei partecipanti): sono dati in più, non dati letti o
   alterati. Se diventasse un problema, il passo successivo è un CAPTCHA o un codice sessione
