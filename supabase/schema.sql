@@ -53,16 +53,18 @@ create table if not exists public.participants (
   created_at  timestamptz not null default now()
 );
 
+-- Sui progetti creati prima della segmentazione per area la create table qui
+-- sopra non viene rieseguita: le colonne vanno aggiunte a parte, e prima di
+-- qualsiasi istruzione che le nomini (il commento qui sotto, per esempio).
+alter table public.participants add column if not exists area_id uuid references public.areas(id) on delete set null;
+alter table public.participants add column if not exists area text;
+
 comment on table public.participants is
   'Registrazione partecipante: nome, cognome e area aziendale, nessuna autenticazione.';
 
 comment on column public.participants.area is
   'Nome dell''area copiato alla registrazione: se l''area viene eliminata dall''elenco '
   'la segmentazione storica resta leggibile. rename_area lo tiene allineato.';
-
--- Per i progetti creati prima della segmentazione per area.
-alter table public.participants add column if not exists area_id uuid references public.areas(id) on delete set null;
-alter table public.participants add column if not exists area text;
 
 create index if not exists participants_area_idx on public.participants (area);
 
@@ -367,9 +369,9 @@ begin
   end if;
 
   update areas a
-     set position = idx.pos
-    from (select unnest(p_ids) as id, generate_subscripts(p_ids, 1)::smallint as pos) idx
-   where a.id = idx.id;
+     set position = t.pos::smallint
+    from unnest(p_ids) with ordinality as t(id, pos)
+   where a.id = t.id;
 end;
 $$;
 
@@ -598,10 +600,11 @@ create or replace view public.v_calibrazione_item with (security_invoker = true)
 -- Segmentazione per area: i partecipanti senza area finiscono in un gruppo a
 -- parte invece di sparire dal conteggio.
 create or replace view public.v_aree with (security_invoker = true) as
-  select coalesce(nullif(btrim(p.area), ''), 'Senza area')                        as area,
-         count(distinct p.id)                                                     as partecipanti,
-         count(s.id) filter (where s.completed_at is not null)                    as compilazioni_complete,
-         round(avg(s.total) filter (where s.completed_at is not null)::numeric, 2) as punteggio_medio
+  select coalesce(nullif(btrim(p.area), ''), 'Senza area')     as area,
+         count(distinct p.id)                                  as partecipanti,
+         count(s.id) filter (where s.completed_at is not null)  as compilazioni_complete,
+         round(cast(avg(s.total) filter (where s.completed_at is not null) as numeric), 2)
+           as punteggio_medio
   from public.participants p
   left join public.sessions s on s.participant_id = p.id
   group by 1
