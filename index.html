@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Auto-assessment competenze AI</title>
-<meta name="description" content="Auto-assessment individuale delle competenze di AI: 12 item su 5 dimensioni, punteggio, profilo e radar.">
+<meta name="description" content="Auto-assessment individuale delle competenze di AI: 12 item su 5 dimensioni con 4 domande di calibrazione, punteggio, profilo e radar.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap">
@@ -27,6 +27,7 @@
     <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
     <symbol id="i-user" viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
     <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
     <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></symbol>
   </defs>
 </svg>
@@ -58,9 +59,10 @@
       <p class="eyebrow">Strumento di autovalutazione</p>
       <h1>Dove sono, oggi, le mie competenze di AI</h1>
       <p class="lead">
-        Dodici affermazioni sul tuo lavoro reale. Per ognuna indichi quanto sei in grado di farla,
-        su una scala da 1 a 4. Alla fine ottieni un punteggio complessivo, il profilo corrispondente
-        e la lettura delle cinque dimensioni che compongono la competenza.
+        Dodici affermazioni sul tuo lavoro reale: per ognuna indichi quanto sei in grado di farla,
+        su una scala da 1 a 4. In mezzo trovi quattro domande a scelta multipla su situazioni
+        concrete, che non entrano nel punteggio. Alla fine ottieni un punteggio complessivo, il
+        profilo corrispondente e la lettura delle cinque dimensioni che compongono la competenza.
       </p>
     </div>
 
@@ -80,7 +82,7 @@
       <span>
         Prima di iniziare ti chiediamo nome e cognome: risposte e punteggi vengono registrati sul
         database del progetto e servono a leggere i risultati in forma aggregata.
-        Tutti gli item hanno la stessa radice — <strong>«Sono in grado di…»</strong>.
+        Gli item della scala hanno tutti la stessa radice — <strong>«Sono in grado di…»</strong>.
       </span>
     </p>
 
@@ -143,17 +145,18 @@
 
   <!-- ============ QUESTIONARIO ============ -->
   <section id="view-quiz" class="view" hidden>
-    <p class="eyebrow">Questionario · 12 item</p>
-    <h1>Sono in grado di…</h1>
+    <p class="eyebrow">Questionario · 16 domande</p>
+    <h1>Come lavori, oggi, con l’AI</h1>
     <p class="lead lead-tight">
-      Valuta ogni affermazione pensando al tuo lavoro attuale, non a quello che potresti fare in teoria.
+      Valuta ogni affermazione pensando al tuo lavoro attuale, non a quello che potresti fare in
+      teoria. Alle quattro domande a scelta multipla si risponde una volta sola: la scelta si blocca.
     </p>
 
     <div class="sticky-bar">
       <ol class="scale-legend scale-legend-inline" id="quiz-scale"></ol>
       <div class="progress-block">
         <div class="progress-row">
-          <span class="progress-count"><output id="answered-count">0</output>/12 risposte</span>
+          <span class="progress-count"><output id="answered-count">0</output>/16 risposte</span>
         </div>
         <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
         <p class="save-status" id="save-status" hidden></p>
@@ -245,7 +248,8 @@
 <footer class="site-footer">
   <div class="wrap">
     <p class="micro">
-      Auto-assessment competenze AI · 5 dimensioni, banca di 30 item, 12 per sessione.
+      Auto-assessment competenze AI · 5 dimensioni, banca di 30 item, 12 per sessione,
+      più 4 domande di calibrazione a scelta multipla.
       Il riferimento normativo è l'obbligo di alfabetizzazione AI previsto dall'art. 4 del Regolamento UE 2024/1689 (AI Act).
     </p>
   </div>

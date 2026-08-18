@@ -31,6 +31,10 @@
     bandBars:    document.getElementById('band-bars'),
     alertBars:   document.getElementById('alert-bars'),
     itemBars:    document.getElementById('item-bars'),
+    calDims:     document.getElementById('cal-dims'),
+    calNote:     document.getElementById('cal-note'),
+    calItemBars: document.getElementById('cal-item-bars'),
+    calLegend:   document.getElementById('cal-legend'),
     sessionsBody: document.getElementById('sessions-tbody'),
     sessionsCount: document.getElementById('sessions-count'),
     peopleBody:  document.getElementById('people-tbody'),
@@ -284,6 +288,257 @@
       .sort(function (a, b) { return a.mean - b.mean; });
   }
 
+  /* ------------------------------------------------------------- taratura */
+
+  // Gli item di calibrazione sono un asse separato: non entrano in medie,
+  // totale o fascia (quelli restano l'autovalutazione dichiarata). Servono solo
+  // a etichettare la dimensione, e l'etichetta la vede solo questa pagina.
+
+  const CAL_LABELS = ['Confermato', 'Sovrastima', 'Sottostima', 'Coerente'];
+
+  const CAL_LABEL_CLASS = {
+    Confermato: 'tag-conf',
+    Sovrastima: 'tag-over',
+    Sottostima: 'tag-under',
+    Coerente:   'tag-coer'
+  };
+
+  const CAL_LABEL_HINT = {
+    Confermato: 'dichiara alto e risponde correttamente',
+    Sovrastima: 'dichiara alto ma non risponde correttamente',
+    Sottostima: 'dichiara basso e risponde correttamente',
+    Coerente:   'dichiara basso e non risponde correttamente'
+  };
+
+  function dimLabel(code) {
+    const d = DIMENSIONS.filter(function (x) { return x.code === code; })[0];
+    return d ? d.label : code;
+  }
+
+  /** Media dichiarata di una dimensione: dalle risposte grezze, con i valori
+   *  salvati come ripiego. */
+  function selfMean(row, code) {
+    const vals = (row.answers || [])
+      .filter(function (a) { return a.dimension === code; })
+      .map(function (a) { return a.value; });
+
+    if (vals.length) {
+      return vals.reduce(function (a, b) { return a + b; }, 0) / vals.length;
+    }
+    const stored = row.dim_means && row.dim_means[code];
+    return typeof stored === 'number' ? stored : null;
+  }
+
+  /** Taratura di una compilazione, dimensione per dimensione.
+   *  L'etichetta compare solo se la compilazione è completa e tutti gli item di
+   *  calibrazione estratti hanno una risposta registrata: altrimenti resta null,
+   *  perché non ha senso stimarla. */
+  function calibrationOf(row) {
+    const out = {};
+    const extracted = row.cal_item_ids || [];
+    const given = {};
+    (row.calibrations || []).forEach(function (c) { given[c.item_id] = c; });
+
+    CAL_DIMS.forEach(function (code) {
+      const ids = extracted.filter(function (id) {
+        return CAL_BY_ID[id] && CAL_BY_ID[id].dim === code;
+      });
+      if (!ids.length) return;
+
+      const answered = ids.filter(function (id) { return given[id]; });
+      const correct = answered.filter(function (id) { return given[id].correct; });
+      const mean = selfMean(row, code);
+      const complete = Boolean(row.completed_at) && answered.length === ids.length;
+
+      out[code] = {
+        total: ids.length,
+        answered: answered.length,
+        correct: correct.length,
+        mean: mean,
+        label: (complete && mean !== null)
+          ? calibrationLabel(mean, correct.length === ids.length)
+          : null
+      };
+    });
+
+    return out;
+  }
+
+  /** Distribuzione delle etichette per dimensione calibrata. */
+  function calibrationSummary() {
+    const acc = {};
+    CAL_DIMS.forEach(function (code) {
+      acc[code] = { labels: {}, labelled: 0, correct: 0, answered: 0, meanSum: 0, meanN: 0 };
+      CAL_LABELS.forEach(function (l) { acc[code].labels[l] = 0; });
+    });
+
+    completed().forEach(function (r) {
+      const cal = calibrationOf(r);
+      CAL_DIMS.forEach(function (code) {
+        const cell = cal[code];
+        if (!cell) return;
+        acc[code].correct += cell.correct;
+        acc[code].answered += cell.answered;
+        if (typeof cell.mean === 'number') {
+          acc[code].meanSum += cell.mean;
+          acc[code].meanN += 1;
+        }
+        if (cell.label) {
+          acc[code].labels[cell.label] += 1;
+          acc[code].labelled += 1;
+        }
+      });
+    });
+
+    return CAL_DIMS.map(function (code) {
+      const cell = acc[code];
+      return {
+        code: code,
+        label: dimLabel(code),
+        labels: cell.labels,
+        labelled: cell.labelled,
+        correct: cell.correct,
+        answered: cell.answered,
+        mean: cell.meanN ? cell.meanSum / cell.meanN : null
+      };
+    });
+  }
+
+  /** Percentuale di risposte corrette per singolo item di calibrazione. */
+  function calItemStats() {
+    const acc = {};
+    completed().forEach(function (r) {
+      (r.calibrations || []).forEach(function (c) {
+        if (!acc[c.item_id]) acc[c.item_id] = { n: 0, ok: 0, dim: c.dimension };
+        acc[c.item_id].n += 1;
+        if (c.correct) acc[c.item_id].ok += 1;
+      });
+    });
+
+    return Object.keys(acc).map(function (id) {
+      return { id: id, dim: acc[id].dim, n: acc[id].n, ok: acc[id].ok, rate: acc[id].ok / acc[id].n };
+    }).sort(function (a, b) { return a.rate - b.rate; });
+  }
+
+  /** Dimensioni in cui la sovrastima è l'etichetta prevalente: sono le sole a
+   *  ricevere un marcatore sul radar, che per il resto non cambia. */
+  function overratedDims(summary) {
+    return summary.filter(function (s) {
+      if (!s.labelled) return false;
+      const over = s.labels.Sovrastima;
+      return over > 0 && CAL_LABELS.every(function (l) {
+        return l === 'Sovrastima' || s.labels[l] <= over;
+      }) && over / s.labelled >= 0.5;
+    }).map(function (s) { return s.code; });
+  }
+
+  /** In tabella la dimensione è una sola lettera: la riga ha già otto colonne
+   *  e le sigle intere la mandavano fuori larghezza. La legenda sotto la
+   *  tabella scioglie lettere e colori. */
+  function calTag(code, label) {
+    const span = document.createElement('span');
+    span.className = 'tag tag-cal ' + (CAL_LABEL_CLASS[label] || '');
+    span.textContent = code.charAt(0);
+    span.title = dimLabel(code) + ': ' + label.toLowerCase() + ' — ' + CAL_LABEL_HINT[label];
+    return span;
+  }
+
+  /** Legenda della colonna Taratura, costruita dalle dimensioni calibrate:
+   *  se cambiano le quote in items.js resta corretta da sé. */
+  function renderCalLegend() {
+    if (!el.calLegend) return;
+    el.calLegend.innerHTML = '';
+
+    const lead = document.createElement('span');
+    lead.textContent = 'Colonna Taratura — ' + CAL_DIMS.map(function (code) {
+      return code.charAt(0) + ' ' + dimLabel(code).toLowerCase();
+    }).join(', ') + ". Il colore dice l'esito: ";
+    el.calLegend.appendChild(lead);
+
+    CAL_LABELS.forEach(function (label, i) {
+      const chip = document.createElement('span');
+      chip.className = 'tag tag-cal ' + CAL_LABEL_CLASS[label];
+      chip.textContent = CAL_DIMS[0].charAt(0);
+      el.calLegend.appendChild(chip);
+      const txt = document.createElement('span');
+      txt.textContent = label.toLowerCase() + (i === CAL_LABELS.length - 1 ? '.' : ' · ');
+      el.calLegend.appendChild(txt);
+    });
+  }
+
+  function renderCalibration(summary) {
+    // --- etichette per dimensione
+    el.calDims.innerHTML = '';
+    summary.forEach(function (s) {
+      const li = document.createElement('li');
+
+      const head = document.createElement('div');
+      head.className = 'bar-head';
+      const name = document.createElement('span');
+      name.className = 'bar-name';
+      name.textContent = s.label;
+      const value = document.createElement('span');
+      value.className = 'bar-value';
+      value.textContent = s.answered
+        ? 'dichiarata ' + (s.mean === null ? '—' : fmt(s.mean)) + ' · ' +
+          pct(s.correct, s.answered) + '% corrette'
+        : 'nessuna risposta';
+      head.appendChild(name);
+      head.appendChild(value);
+      li.appendChild(head);
+
+      const chips = document.createElement('div');
+      chips.className = 'cal-chips';
+      CAL_LABELS.forEach(function (label) {
+        const n = s.labels[label];
+        const chip = document.createElement('span');
+        chip.className = 'tag ' + CAL_LABEL_CLASS[label] +
+          (n ? '' : ' is-empty') + (label === 'Sovrastima' && n ? ' is-priority' : '');
+        chip.textContent = label + ' ' + n;
+        chip.title = CAL_LABEL_HINT[label];
+        chips.appendChild(chip);
+      });
+      li.appendChild(chips);
+
+      el.calDims.appendChild(li);
+    });
+
+    // --- priorità formativa: la dimensione con più sovrastime
+    const worst = summary.slice().sort(function (a, b) {
+      return (b.labels.Sovrastima / (b.labelled || 1)) - (a.labels.Sovrastima / (a.labelled || 1));
+    })[0];
+
+    if (!worst || !worst.labelled) {
+      el.calNote.textContent = 'Le etichette compaiono al primo questionario concluso. ' +
+        'Non modificano medie, totale e fascia: sono un asse separato.';
+    } else if (!worst.labels.Sovrastima) {
+      el.calNote.textContent = 'Nessuna sovrastima rilevata: dove la dichiarazione è alta, ' +
+        'le domande di calibrazione risultano corrette.';
+    } else {
+      el.calNote.textContent = 'Priorità formativa: ' + worst.label + ' — ' +
+        worst.labels.Sovrastima + ' compilazion' + (worst.labels.Sovrastima === 1 ? 'e' : 'i') +
+        ' su ' + worst.labelled + ' in sovrastima (dichiarazione alta, risposta non corretta).';
+    }
+
+    // --- % corrette per item
+    const stats = calItemStats();
+    el.calItemBars.innerHTML = '';
+    if (!stats.length) {
+      const li = document.createElement('li');
+      li.className = 'micro';
+      li.textContent = 'Nessuna risposta di calibrazione registrata.';
+      el.calItemBars.appendChild(li);
+      return;
+    }
+    stats.forEach(function (s) {
+      const item = CAL_BY_ID[s.id];
+      const text = item ? (item.intro || item.text) : '';
+      const label = s.id + ' · ' + text.slice(0, 80) + (text.length > 80 ? '…' : '');
+      el.calItemBars.appendChild(
+        bar(label, s.ok + '/' + s.n + ' · ' + pct(s.ok, s.n) + '%', s.rate, s.rate < 0.5));
+    });
+  }
+
   function render() {
     const done = completed();
 
@@ -318,11 +573,17 @@
       el.dimBars.appendChild(bar(d.label, fmt(d.mean) + ' / 4', d.mean / 4));
     });
 
+    // Taratura: asse separato. Il radar resta l'autovalutazione, il marcatore
+    // segnala solo le dimensioni in cui prevale la sovrastima.
+    const calSummary = calibrationSummary();
+    renderCalibration(calSummary);
+    renderCalLegend();
+
     if (done.length) {
       const sorted = dims.slice().sort(function (a, b) { return b.mean - a.mean; });
       el.dimNote.textContent = 'Più solida: ' + sorted[0].label + ' (' + fmt(sorted[0].mean) +
         '). Più fragile: ' + sorted[sorted.length - 1].label + ' (' + fmt(sorted[sorted.length - 1].mean) + ').';
-      window.AIAA_RADAR.draw(el.radar, dims);
+      window.AIAA_RADAR.draw(el.radar, dims, { mark: overratedDims(calSummary) });
     } else {
       el.dimNote.textContent = 'Nessuna compilazione completa: le medie compaiono al primo questionario concluso.';
     }
@@ -362,7 +623,7 @@
     // --- tabella compilazioni
     el.sessionsCount.textContent = rows.length + (rows.length === 1 ? ' riga' : ' righe');
     el.sessionsBody.innerHTML = '';
-    if (!rows.length) emptyRow(el.sessionsBody, 8, 'Nessuna compilazione registrata.');
+    if (!rows.length) emptyRow(el.sessionsBody, 9, 'Nessuna compilazione registrata.');
 
     rows.forEach(function (r) {
       const tr = document.createElement('tr');
@@ -407,6 +668,16 @@
         alerts.textContent = '—';
       }
       tr.appendChild(alerts);
+
+      const taratura = document.createElement('td');
+      const cal = calibrationOf(r);
+      const labelled = CAL_DIMS.filter(function (code) { return cal[code] && cal[code].label; });
+      if (labelled.length) {
+        labelled.forEach(function (code) { taratura.appendChild(calTag(code, cal[code].label)); });
+      } else {
+        taratura.textContent = '—';
+      }
+      tr.appendChild(taratura);
 
       tr.appendChild(trashCell(r.id, 'la compilazione di ' + personName(r.participants)));
 
@@ -673,15 +944,22 @@
   /* ------------------------------------------------------------- CSV export */
 
   function toCsv() {
+    // Le colonne storiche restano dove sono: la calibrazione si aggiunge in coda.
     const header = ['partecipante', 'avviata', 'completata', 'totale', 'profilo', 'alert']
       .concat(DIMENSIONS.map(function (d) { return 'media_' + d.code; }))
-      .concat(ITEMS.map(function (it) { return it.id; }));
+      .concat(ITEMS.map(function (it) { return it.id; }))
+      .concat(['cal_item_estratti'])
+      .concat(CAL_ITEMS.map(function (it) { return it.id; }))
+      .concat(CAL_DIMS.map(function (code) { return 'taratura_' + code; }));
 
     const lines = [header.join(';')];
 
     rows.forEach(function (r) {
       const byItem = {};
       (r.answers || []).forEach(function (a) { byItem[a.item_id] = a.value; });
+      const byCal = {};
+      (r.calibrations || []).forEach(function (c) { byCal[c.item_id] = c; });
+      const cal = calibrationOf(r);
       const means = r.dim_means || {};
 
       const cells = [
@@ -695,6 +973,11 @@
         return typeof means[d.code] === 'number' ? String(means[d.code]).replace('.', ',') : '';
       })).concat(ITEMS.map(function (it) {
         return typeof byItem[it.id] === 'number' ? byItem[it.id] : '';
+      })).concat([(r.cal_item_ids || []).join('|')]).concat(CAL_ITEMS.map(function (it) {
+        const given = byCal[it.id];
+        return given ? (given.correct ? 1 : 0) : '';   // vuoto se non estratto o senza risposta
+      })).concat(CAL_DIMS.map(function (code) {
+        return (cal[code] && cal[code].label) || '';
       }));
 
       lines.push(cells.map(function (c) {

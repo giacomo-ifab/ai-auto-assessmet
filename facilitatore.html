@@ -117,7 +117,10 @@
             <canvas id="radar" width="520" height="400" role="img"
                     aria-label="Radar delle medie di gruppo, asse da 0 a 4"></canvas>
           </div>
-          <p class="micro">Asse fisso 0–4, come nel profilo individuale.</p>
+          <p class="micro">
+            Asse fisso 0–4, come nel profilo individuale: i valori sono quelli dell'autovalutazione.
+            L'anello rosso segnala le dimensioni in cui prevale la sovrastima.
+          </p>
         </div>
       </div>
 
@@ -139,6 +142,29 @@
           <span class="micro">media più bassa · minimo 2 risposte</span>
         </div>
         <ul class="bars" id="item-bars"></ul>
+      </div>
+
+      <div class="grid-2" style="margin-top: 16px">
+        <div class="card">
+          <div class="card-head">
+            <h3>Taratura</h3>
+            <span class="micro">solo per il facilitatore</span>
+          </div>
+          <ul class="bars cal-dims" id="cal-dims"></ul>
+          <p class="micro" id="cal-note"></p>
+          <p class="micro">
+            Incrocio fra la media dichiarata (soglia 3,0) e gli item di calibrazione della stessa
+            dimensione, che devono essere tutti corretti. Non tocca medie, totale e fascia, e le
+            dimensioni senza item di calibrazione restano senza etichetta.
+          </p>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Domande di calibrazione</h3>
+            <span class="micro">% di risposte corrette</span>
+          </div>
+          <ul class="bars" id="cal-item-bars"></ul>
+        </div>
       </div>
 
       <div class="card" style="margin-top: 16px">
@@ -167,12 +193,14 @@
                 <th scope="col">Totale</th>
                 <th scope="col">Profilo</th>
                 <th scope="col">Alert</th>
+                <th scope="col">Taratura</th>
                 <th scope="col" class="col-act"><span class="sr-only">Azioni</span></th>
               </tr>
             </thead>
             <tbody id="sessions-tbody"></tbody>
           </table>
         </div>
+        <p class="micro cal-legend" id="cal-legend"></p>
         <p class="micro">
           Eliminare una compilazione cancella anche le sue risposte; il partecipante resta
           registrato, con le eventuali altre compilazioni.

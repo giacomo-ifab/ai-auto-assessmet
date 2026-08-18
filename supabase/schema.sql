@@ -29,18 +29,23 @@ create table if not exists public.sessions (
   band            text,
   dim_means       jsonb,                         -- {"COMP":3.00,"USO":4.00,...}
   alerts          text[],                        -- {uso_oltre_verifica,gap_responsabilita}
-  user_agent      text
+  user_agent      text,
+  cal_item_ids    text[]                         -- item di calibrazione estratti
 );
 
 comment on table public.sessions is
   'Una riga per compilazione. Resta con completed_at null se il questionario viene abbandonato.';
+
+-- Per i progetti creati prima degli item di calibrazione: la create table sopra
+-- non viene rieseguita, la colonna va aggiunta a parte.
+alter table public.sessions add column if not exists cal_item_ids text[];
 
 create table if not exists public.answers (
   session_id   uuid not null references public.sessions(id) on delete cascade,
   item_id      text not null,                    -- C1..C6, U1..U6, V1..V6, R1..R6, S1..S6
   dimension    text not null check (dimension in ('COMP','USO','VAL','RESP','SVIL')),
   value        smallint not null check (value between 1 and 4),
-  position     smallint,                         -- posizione nella lista mostrata (1-12)
+  position     smallint,                         -- posizione nella lista mostrata (1-16)
   answered_at  timestamptz not null default now(),
   primary key (session_id, item_id)              -- chiave dell'upsert progressivo
 );
@@ -48,10 +53,26 @@ create table if not exists public.answers (
 comment on table public.answers is
   'Risposte salvate mentre il partecipante compila: upsert su (session_id, item_id).';
 
+create table if not exists public.calibrations (
+  session_id   uuid not null references public.sessions(id) on delete cascade,
+  item_id      text not null,                    -- C-cal-1, V-cal-2, R-cal-1, …
+  dimension    text not null check (dimension in ('COMP','USO','VAL','RESP','SVIL')),
+  choice_id    text not null,                    -- opzione scelta nella banca (a..d)
+  correct      boolean not null,
+  position     smallint,                         -- posizione nella lista mostrata (1-16)
+  answered_at  timestamptz not null default now(),
+  primary key (session_id, item_id)              -- una sola risposta per item
+);
+
+comment on table public.calibrations is
+  'Risposte agli item di calibrazione: asse separato, non entra in punteggi né fasce. '
+  'Si risponde una volta sola: la chiave primaria e save_calibration ignorano il secondo tentativo.';
+
 create index if not exists sessions_participant_idx on public.sessions (participant_id);
 create index if not exists sessions_started_idx     on public.sessions (started_at desc);
 create index if not exists sessions_completed_idx   on public.sessions (completed_at);
 create index if not exists answers_item_idx         on public.answers (item_id);
+create index if not exists calibrations_item_idx    on public.calibrations (item_id);
 
 -- Ogni scrittura sulle risposte tiene aggiornato updated_at della sessione:
 -- serve a distinguere un abbandono vero da una compilazione ancora in corso.
@@ -72,6 +93,11 @@ create trigger answers_touch_session
   after insert or update on public.answers
   for each row execute function public.touch_session();
 
+drop trigger if exists calibrations_touch_session on public.calibrations;
+create trigger calibrations_touch_session
+  after insert or update on public.calibrations
+  for each row execute function public.touch_session();
+
 -- ------------------------------------------------------------------- RLS
 -- Le tabelle sono CHIUSE alla chiave anon: nessuna policy per quel ruolo, né in
 -- lettura né in scrittura. Il browser scrive solo attraverso le funzioni RPC
@@ -85,9 +111,10 @@ create trigger answers_touch_session
 -- La lettura resta riservata agli utenti autenticati (il facilitatore, creato a
 -- mano in Authentication → Users).
 
-alter table public.participants enable row level security;
-alter table public.sessions     enable row level security;
-alter table public.answers      enable row level security;
+alter table public.participants  enable row level security;
+alter table public.sessions      enable row level security;
+alter table public.answers       enable row level security;
+alter table public.calibrations  enable row level security;
 
 -- Policy della prima versione dello schema, se presenti: non servono più.
 drop policy if exists "participants insert anon" on public.participants;
@@ -108,11 +135,17 @@ drop policy if exists "answers select auth" on public.answers;
 create policy "answers select auth" on public.answers
   for select to authenticated using (true);
 
+drop policy if exists "calibrations select auth" on public.calibrations;
+create policy "calibrations select auth" on public.calibrations
+  for select to authenticated using (true);
+
 grant usage on schema public to anon, authenticated;
 revoke insert, update, delete on public.participants from anon;
 revoke insert, update, delete on public.sessions     from anon;
 revoke insert, update, delete on public.answers      from anon;
-grant select on public.participants, public.sessions, public.answers to authenticated;
+revoke insert, update, delete on public.calibrations from anon;
+grant select on public.participants, public.sessions, public.answers, public.calibrations
+  to authenticated;
 
 -- ------------------------------------------------------ cancellazioni
 -- Il facilitatore, dalla pagina statistiche, può eliminare partecipanti e
@@ -141,7 +174,12 @@ drop policy if exists "answers delete auth" on public.answers;
 create policy "answers delete auth" on public.answers
   for delete to authenticated using (true);
 
-grant delete on public.participants, public.sessions, public.answers to authenticated;
+drop policy if exists "calibrations delete auth" on public.calibrations;
+create policy "calibrations delete auth" on public.calibrations
+  for delete to authenticated using (true);
+
+grant delete on public.participants, public.sessions, public.answers, public.calibrations
+  to authenticated;
 
 -- --------------------------------------------------------- API di scrittura
 -- Funzioni SECURITY DEFINER: girano con i privilegi del proprietario, quindi
@@ -169,10 +207,15 @@ begin
 end;
 $$;
 
+-- La firma è cambiata con l'arrivo degli item di calibrazione: create or replace
+-- creerebbe un secondo overload, quindi la vecchia versione va rimossa.
+drop function if exists public.start_session(uuid, text[], text);
+
 create or replace function public.start_session(
   p_participant uuid,
   p_items       text[],
-  p_user_agent  text default null
+  p_user_agent  text default null,
+  p_cal_items   text[] default null
 )
 returns uuid
 language plpgsql security definer set search_path = public
@@ -188,8 +231,15 @@ begin
     raise exception 'la sessione deve contenere 12 item' using errcode = '22023';
   end if;
 
-  insert into sessions (participant_id, item_ids, user_agent)
-  values (p_participant, p_items, left(coalesce(p_user_agent, ''), 300))
+  -- Gli item di calibrazione non hanno un numero vincolato come i 12 della scala:
+  -- non entrano in nessun punteggio, e cambiare le quote in js/items.js non deve
+  -- far fallire l'apertura delle sessioni. Resta solo un tetto di sicurezza.
+  if coalesce(array_length(p_cal_items, 1), 0) > 12 then
+    raise exception 'troppi item di calibrazione' using errcode = '22023';
+  end if;
+
+  insert into sessions (participant_id, item_ids, user_agent, cal_item_ids)
+  values (p_participant, p_items, left(coalesce(p_user_agent, ''), 300), p_cal_items)
   returning id into v_id;
 
   return v_id;
@@ -251,6 +301,40 @@ begin
 end;
 $$;
 
+/* Un item di calibrazione, appena il partecipante scegle un'opzione.
+   Il secondo tentativo sullo stesso item viene ignorato senza errore: la prima
+   risposta è quella che conta, e la UI blocca comunque le opzioni. */
+create or replace function public.save_calibration(
+  p_session   uuid,
+  p_item      text,
+  p_dimension text,
+  p_choice    text,
+  p_correct   boolean,
+  p_position  smallint default null
+)
+returns void
+language plpgsql security definer set search_path = public
+as $$
+begin
+  if not exists (select 1 from sessions where id = p_session and completed_at is null) then
+    raise exception 'sessione inesistente o già conclusa' using errcode = '22023';
+  end if;
+
+  if btrim(coalesce(p_item, '')) = '' or btrim(coalesce(p_choice, '')) = '' then
+    raise exception 'item e opzione scelta sono obbligatori' using errcode = '22023';
+  end if;
+
+  insert into calibrations (session_id, item_id, dimension, choice_id, correct, position)
+  values (p_session,
+          left(btrim(p_item), 40),          -- gli id sono minuscoli/maiuscoli come in banca
+          upper(btrim(p_dimension)),
+          left(lower(btrim(p_choice)), 8),
+          coalesce(p_correct, false),
+          p_position)
+  on conflict (session_id, item_id) do nothing;
+end;
+$$;
+
 /* Chiusura: ammessa una sola volta per sessione. */
 create or replace function public.complete_session(
   p_session   uuid,
@@ -280,15 +364,17 @@ end;
 $$;
 
 revoke all on function public.register_participant(text, text) from public;
-revoke all on function public.start_session(uuid, text[], text) from public;
+revoke all on function public.start_session(uuid, text[], text, text[]) from public;
 revoke all on function public.save_answer(uuid, text, text, smallint, smallint) from public;
 revoke all on function public.save_answers(uuid, jsonb) from public;
+revoke all on function public.save_calibration(uuid, text, text, text, boolean, smallint) from public;
 revoke all on function public.complete_session(uuid, smallint, text, jsonb, text[]) from public;
 
 grant execute on function public.register_participant(text, text) to anon, authenticated;
-grant execute on function public.start_session(uuid, text[], text) to anon, authenticated;
+grant execute on function public.start_session(uuid, text[], text, text[]) to anon, authenticated;
 grant execute on function public.save_answer(uuid, text, text, smallint, smallint) to anon, authenticated;
 grant execute on function public.save_answers(uuid, jsonb) to anon, authenticated;
+grant execute on function public.save_calibration(uuid, text, text, text, boolean, smallint) to anon, authenticated;
 grant execute on function public.complete_session(uuid, smallint, text, jsonb, text[]) to anon, authenticated;
 
 -- ------------------------------------------------------- viste di comodo
@@ -315,4 +401,18 @@ create or replace view public.v_medie_item with (security_invoker = true) as
   group by a.item_id, a.dimension
   order by media asc;
 
-grant select on public.v_sessioni_complete, public.v_medie_item to authenticated;
+-- Item di calibrazione: quali domande hanno fatto inciampare il gruppo.
+create or replace view public.v_calibrazione_item with (security_invoker = true) as
+  select c.item_id,
+         c.dimension,
+         count(*)                                              as risposte,
+         sum(case when c.correct then 1 else 0 end)            as corrette,
+         round(100.0 * sum(case when c.correct then 1 else 0 end) / count(*), 1) as pct_corrette
+  from public.calibrations c
+  join public.sessions s on s.id = c.session_id
+  where s.completed_at is not null
+  group by c.item_id, c.dimension
+  order by pct_corrette asc;
+
+grant select on public.v_sessioni_complete, public.v_medie_item, public.v_calibrazione_item
+  to authenticated;

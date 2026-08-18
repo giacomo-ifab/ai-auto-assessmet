@@ -6,6 +6,7 @@
      createParticipant → POST /rest/v1/participants
      createSession     → POST /rest/v1/sessions
      queueAnswer       → POST /rest/v1/answers  (upsert, con debounce per item)
+     saveCalibration   → rpc save_calibration  (item di calibrazione, una volta sola)
      completeSession   → PATCH /rest/v1/sessions?id=eq.<id>
 
    Letture (solo utenti autenticati, pagina facilitatore):
@@ -108,12 +109,27 @@ window.DB = (function () {
       .then(function (id) { return { id: id, first_name: firstName, last_name: lastName }; }));
   }
 
-  function createSession(participantId, itemIds) {
+  function createSession(participantId, itemIds, calItemIds) {
     return track(rpc('start_session', {
       p_participant: participantId,
       p_items: itemIds,
-      p_user_agent: (navigator.userAgent || '').slice(0, 300)
+      p_user_agent: (navigator.userAgent || '').slice(0, 300),
+      p_cal_items: calItemIds || null
     }).then(function (id) { return { id: id }; }));
+  }
+
+  /** Item di calibrazione: una scrittura sola, subito, senza debounce.
+   *  Un secondo invio sullo stesso item viene ignorato dal database. */
+  function saveCalibration(sessionId, cal) {
+    if (!configured || !sessionId) return Promise.resolve(null);
+    return track(rpc('save_calibration', {
+      p_session: sessionId,
+      p_item: cal.itemId,
+      p_dimension: cal.dim,
+      p_choice: cal.choiceId,
+      p_correct: cal.correct,
+      p_position: cal.position
+    }));
   }
 
   function putAnswer(sessionId, answer) {
@@ -208,10 +224,12 @@ window.DB = (function () {
 
   /* ------------------------------------------------- letture facilitatore */
 
-  /** Sessioni con partecipante e risposte, in una sola richiesta. */
+  /** Sessioni con partecipante, risposte e calibrazione, in una sola richiesta. */
   function fetchOverview(limit) {
     const select = 'id,started_at,updated_at,completed_at,total,band,dim_means,alerts,item_ids,' +
-                   'participants(id,first_name,last_name),answers(item_id,dimension,value)';
+                   'cal_item_ids,participants(id,first_name,last_name),' +
+                   'answers(item_id,dimension,value),' +
+                   'calibrations(item_id,dimension,choice_id,correct)';
     return request('/rest/v1/sessions?select=' + encodeURIComponent(select) +
                    '&order=started_at.desc&limit=' + (limit || 1000), { useAuth: true });
   }
@@ -286,6 +304,7 @@ window.DB = (function () {
     createParticipant: createParticipant,
     createSession: createSession,
     queueAnswer: queueAnswer,
+    saveCalibration: saveCalibration,
     flushAnswers: flushAnswers,
     saveAllAnswers: saveAllAnswers,
     completeSession: completeSession,

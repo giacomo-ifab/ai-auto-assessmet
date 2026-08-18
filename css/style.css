@@ -757,6 +757,112 @@ h3 { font-size: 0.875rem; font-weight: 600; color: var(--navy); margin: 0 0 12px
 .modal-card .field { margin-top: 14px; }
 .modal-actions { margin-top: 18px; justify-content: flex-end; }
 
+/* ---------- Item di calibrazione (questionario) ---------- */
+
+/* Stessa card degli item della scala, con un filo di distinzione: il
+   partecipante deve capire che la domanda funziona in modo diverso, non che
+   viene valutato. Nessun riscontro sull'esito, né qui né nei risultati. */
+.item-cal {
+  background: #fbfcfd;
+  box-shadow: inset 3px 0 0 var(--navy);
+}
+
+/* Il testo qui è a blocchi (contesto, citazione, domanda): il numero va messo
+   in colonna a sé, altrimenti resta appeso su una riga vuota. */
+.item-cal legend { display: flex; align-items: baseline; gap: 8px; }
+.item-cal .item-num { margin-right: 0; }
+.item-cal .item-text { flex: 1; min-width: 0; }
+
+.cal-intro { display: block; color: var(--muted); margin-bottom: 8px; }
+
+.cal-quote {
+  display: block;
+  border-left: 3px solid var(--blue-line);
+  background: var(--blue-wash);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.cal-question { display: block; font-weight: 600; color: var(--navy); }
+
+.cal-opts { display: flex; flex-direction: column; gap: 8px; }
+
+.cal-opt {
+  position: relative;
+  display: flex; align-items: flex-start; gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.cal-opt:hover { border-color: var(--blue); }
+.cal-opt input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+.cal-mark {
+  width: 15px; height: 15px; flex: none;
+  margin-top: 3px;
+  border: 2px solid #c4c4c4;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.cal-opt:has(input:checked) { border-color: var(--blue); background: var(--blue-wash); }
+.cal-opt:has(input:checked) .cal-mark { border-color: var(--blue); background: var(--blue); box-shadow: inset 0 0 0 2px var(--surface); }
+.cal-opt:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+.cal-txt { font-size: 0.9rem; color: var(--text); }
+
+/* Bloccata: si risponde una volta sola. */
+.item-cal.is-locked .cal-opt { cursor: default; }
+.item-cal.is-locked .cal-opt:hover { border-color: var(--border); }
+.item-cal.is-locked .cal-opt:has(input:checked):hover { border-color: var(--blue); }
+.item-cal.is-locked .cal-opt:not(:has(input:checked)) { opacity: 0.55; }
+
+.cal-locked {
+  display: flex; align-items: center; gap: 6px;
+  margin: 12px 0 0;
+  font-size: 0.75rem; font-weight: 600; color: var(--muted);
+}
+
+.cal-locked .icon { width: 13px; height: 13px; }
+
+/* Riepilogo risposte: la domanda a scelta multipla con la risposta data,
+   senza dire se fosse quella corretta. */
+.recap-cal .recap-intro { display: block; margin-bottom: 4px; }
+.recap-cal .recap-quote {
+  display: block;
+  border-left: 2px solid var(--blue-line);
+  padding-left: 10px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.recap-cal .recap-q { display: block; color: var(--navy); font-weight: 600; }
+.recap-cal .recap-a { display: block; margin-top: 2px; }
+.recap-score.is-cal { background: var(--bg-soft); color: var(--navy); }
+
+/* ---------- Taratura (solo pagina facilitatore) ---------- */
+
+.cal-dims li { margin-bottom: 14px; }
+.cal-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+.tag-conf  { background: #ecfdf5; color: #065f46; }
+.tag-over  { background: var(--rose-bg); color: var(--rose-text); }
+.tag-under { background: var(--blue-tint); color: var(--blue-dark); }
+.tag-coer  { background: var(--bg-soft); color: var(--muted); }
+
+.tag.is-empty { opacity: 0.45; }
+.tag.is-priority { box-shadow: inset 0 0 0 1px var(--rose-line); }
+
+.tag-cal { margin-right: 2px; padding: 2px 7px; font-variant-numeric: tabular-nums; }
+
+.cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.cal-legend .tag { margin: 0 2px; }
+
 /* ---------- Stampa ---------- */
 
 @media print {

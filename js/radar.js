@@ -15,8 +15,15 @@ window.AIAA_RADAR = (function () {
   /**
    * @param {HTMLCanvasElement} canvas
    * @param {Array<{label: string, mean: number}>} series
+   * @param {{mark?: string[]}} [opts] codici dimensione da marcare (sovrastima).
+   *        Il marcatore è un semplice anello sul vertice: i valori del radar
+   *        restano quelli dell'autovalutazione e nessun punto viene spostato.
    */
-  function draw(canvas, series) {
+  function draw(canvas, series, opts) {
+    const marked = ((opts && opts.mark) || []).reduce(function (acc, code) {
+      acc[code] = true;
+      return acc;
+    }, {});
     const width = 520;
     const height = 400;
     const dpr = window.devicePixelRatio || 1;
@@ -102,6 +109,17 @@ window.AIAA_RADAR = (function () {
       ctx.stroke();
     });
 
+    // marcatore di sovrastima: anello attorno al vertice, nessuno spostamento
+    series.forEach(function (d, i) {
+      if (!marked[d.code]) return;
+      const p = point(i, d.mean);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 9, 0, Math.PI * 2);
+      ctx.strokeStyle = '#be123c';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
     // etichette con il valore, tenute dentro il canvas
     series.forEach(function (d, i) {
       const a = start + i * step;
@@ -128,9 +146,13 @@ window.AIAA_RADAR = (function () {
       ctx.fillText(fmt(d.mean), lx, ly + 15);
     });
 
+    const markedLabels = series.filter(function (d) { return marked[d.code]; })
+      .map(function (d) { return d.label; });
+
     canvas.setAttribute('aria-label',
       'Radar su asse 0–' + MAX + ': ' +
-      series.map(function (d) { return d.label + ' ' + fmt(d.mean); }).join(', ') + '.');
+      series.map(function (d) { return d.label + ' ' + fmt(d.mean); }).join(', ') + '.' +
+      (markedLabels.length ? ' Sovrastima prevalente su: ' + markedLabels.join(', ') + '.' : ''));
   }
 
   return { draw: draw, fmt: fmt };

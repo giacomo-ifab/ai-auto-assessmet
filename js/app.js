@@ -1,17 +1,27 @@
 /* ==========================================================================
    Auto-assessment competenze AI — logica di sessione, scoring, radar.
-   Dipende da js/items.js (DIMENSIONS, ITEMS, SCALE, BANDS).
+   Dipende da js/items.js (DIMENSIONS, ITEMS, SCALE, BANDS, CAL_*).
+
+   Il questionario mostra due tipi di domanda nella stessa lista: i 12 item
+   della scala 1–4, che producono medie, totale e fascia, e 4 item di
+   calibrazione a scelta multipla, che non entrano in nessun punteggio. La loro
+   lettura (confermato / sovrastima / sottostima) sta in js/facilitator.js:
+   al partecipante non viene mostrato alcun esito.
    ========================================================================== */
 
 (function () {
   'use strict';
 
   const TOTAL_ITEMS = DIMENSIONS.reduce((n, d) => n + d.quota, 0); // 12
+  const TOTAL_QUESTIONS = TOTAL_ITEMS + CAL_TOTAL;                 // 16
 
   /** Stato della sessione corrente */
   const session = {
-    items: [],            // item estratti, nell'ordine di presentazione
+    items: [],            // 12 item della scala, nell'ordine di estrazione
+    calItems: [],         // 4 item di calibrazione, con le opzioni già mescolate
+    list: [],             // le 16 domande nell'ordine mostrato: { kind, item }
     answers: new Map(),   // id item -> 1..4
+    calAnswers: new Map(),// id item di calibrazione -> { choiceId, correct }
     validated: false,     // true dopo il primo tentativo di calcolo
     dbId: null            // id della riga sessions su Supabase, null se non salvata
   };
@@ -19,9 +29,11 @@
   /** Punti di "Come funziona" nella intro. */
   const HOW_IT_WORKS = [
     TOTAL_ITEMS + ' item estratti casualmente da una banca di 30.',
-    'Nessuna risposta giusta o sbagliata: si misura la padronanza dichiarata.',
+    CAL_TOTAL + ' domande a scelta multipla su situazioni concrete, mescolate fra gli item: ' +
+      'si risponde una volta sola e non cambiano il punteggio.',
+    'Sugli item della scala non ci sono risposte giuste o sbagliate: si misura la padronanza dichiarata.',
     'Il calcolo parte solo quando tutte le risposte sono complete.',
-    'Ogni nuova sessione propone una selezione diversa di item.'
+    'Ogni nuova sessione propone una selezione diversa di domande.'
   ];
 
   const el = {
@@ -115,6 +127,54 @@
     return shuffle(picked); // ordine mescolato: le dimensioni non sono visibili
   }
 
+  /** Estrae gli item di calibrazione (1 COMP + 2 VAL + 1 RESP) e mescola le
+   *  quattro opzioni di ciascuno: la posizione della risposta corretta cambia
+   *  a ogni sessione. */
+  function drawCalItems() {
+    const picked = [];
+    CAL_DIMS.forEach(function (code) {
+      const pool = CAL_ITEMS.filter(function (it) { return it.dim === code; });
+      picked.push.apply(picked, shuffle(pool).slice(0, CAL_QUOTAS[code]));
+    });
+    return shuffle(picked).map(function (it) {
+      return Object.assign({}, it, { options: shuffle(it.options) });
+    });
+  }
+
+  /** Intreccia le due serie: un item di calibrazione ogni blocco di tre item
+   *  della scala, in posizione casuale dentro il blocco. Così il questionario
+   *  non apre con una domanda a scelta multipla e non ne mette due di fila. */
+  function buildList(items, calItems) {
+    const list = [];
+    if (!calItems.length) {
+      return items.map(function (it) { return { kind: 'scale', item: it }; });
+    }
+
+    const block = Math.max(1, Math.floor(items.length / calItems.length));
+    let used = 0;
+
+    calItems.forEach(function (cal, b) {
+      const chunk = items.slice(b * block, (b + 1) * block);
+      const after = 1 + randomInt(chunk.length);   // almeno un item della scala prima
+      chunk.forEach(function (it, i) {
+        list.push({ kind: 'scale', item: it });
+        if (i + 1 === after) list.push({ kind: 'cal', item: cal });
+      });
+      used = (b + 1) * block;
+    });
+
+    items.slice(used).forEach(function (it) { list.push({ kind: 'scale', item: it }); });
+    return list;
+  }
+
+  /** Posizione (1-based) di una domanda nella lista mostrata. */
+  function positionOf(itemId) {
+    for (let i = 0; i < session.list.length; i++) {
+      if (session.list[i].item.id === itemId) return i + 1;
+    }
+    return null;
+  }
+
   /* ----------------------------------------------------------- rendering UI */
 
   function renderHowItWorks() {
@@ -142,92 +202,191 @@
     });
   }
 
-  function renderItems() {
-    el.itemList.innerHTML = '';
+  /** Intestazione comune alle due tipologie di domanda: numero + testo. */
+  function questionLegend(idx, textNode) {
+    const legend = document.createElement('legend');
+    const num = document.createElement('span');
+    num.className = 'item-num';
+    num.textContent = String(idx + 1).padStart(2, '0');
+    legend.appendChild(num);
+    legend.appendChild(textNode);
+    return legend;
+  }
 
-    session.items.forEach(function (item, idx) {
-      const li = document.createElement('li');
-      li.className = 'item';
-      li.id = 'item-' + (idx + 1);
+  function missingFlag() {
+    const flag = document.createElement('p');
+    flag.className = 'item-flag';
+    flag.appendChild(icon('i-circle-alert'));
+    flag.appendChild(document.createElement('span')).textContent = 'Risposta mancante';
+    flag.hidden = true;
+    return flag;
+  }
 
-      const fs = document.createElement('fieldset');
+  /** Item della scala 1–4. */
+  function scaleCard(item, idx) {
+    const li = document.createElement('li');
+    li.className = 'item';
+    li.id = 'item-' + (idx + 1);
 
-      const legend = document.createElement('legend');
-      const num = document.createElement('span');
-      num.className = 'item-num';
-      num.textContent = String(idx + 1).padStart(2, '0');
-      const text = document.createElement('span');
-      text.className = 'item-text';
-      const stem = document.createElement('span');
-      stem.className = 'item-stem';
-      stem.textContent = 'Sono in grado di ';
-      text.appendChild(stem);
-      text.appendChild(document.createTextNode(lowerFirst(item.text)));
-      legend.appendChild(num);
-      legend.appendChild(text);
-      fs.appendChild(legend);
+    const fs = document.createElement('fieldset');
 
-      const opts = document.createElement('div');
-      opts.className = 'opts';
+    const text = document.createElement('span');
+    text.className = 'item-text';
+    const stem = document.createElement('span');
+    stem.className = 'item-stem';
+    stem.textContent = 'Sono in grado di ';
+    text.appendChild(stem);
+    text.appendChild(document.createTextNode(lowerFirst(item.text)));
+    fs.appendChild(questionLegend(idx, text));
 
-      SCALE.forEach(function (s) {
-        const label = document.createElement('label');
-        label.className = 'opt';
+    const opts = document.createElement('div');
+    opts.className = 'opts';
 
-        const input = document.createElement('input');
-        input.type = 'radio';
-        input.name = 'q_' + item.id;
-        input.value = s.value;
-        input.setAttribute('aria-label', s.value + ' — ' + s.label);
-        if (session.answers.get(item.id) === s.value) {
+    SCALE.forEach(function (s) {
+      const label = document.createElement('label');
+      label.className = 'opt';
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'q_' + item.id;
+      input.value = s.value;
+      input.setAttribute('aria-label', s.value + ' — ' + s.label);
+      if (session.answers.get(item.id) === s.value) {
+        input.checked = true;
+        label.classList.add('is-selected');
+      }
+
+      const numSpan = document.createElement('span');
+      numSpan.className = 'opt-num';
+      numSpan.textContent = s.value;
+
+      const txtSpan = document.createElement('span');
+      txtSpan.className = 'opt-txt';
+      txtSpan.textContent = s.label;
+
+      label.appendChild(input);
+      label.appendChild(numSpan);
+      label.appendChild(txtSpan);
+      opts.appendChild(label);
+    });
+
+    fs.appendChild(opts);
+    fs.appendChild(missingFlag());
+    li.appendChild(fs);
+
+    if (session.answers.has(item.id)) li.classList.add('is-answered');
+    return li;
+  }
+
+  /** Item di calibrazione: quattro opzioni, una sola scelta, poi si blocca.
+   *  Nessun riscontro al partecipante su quale fosse l'opzione corretta. */
+  function calCard(item, idx) {
+    const given = session.calAnswers.get(item.id) || null;
+
+    const li = document.createElement('li');
+    li.className = 'item item-cal' + (given ? ' is-locked' : '');
+    li.id = 'item-' + (idx + 1);
+
+    const fs = document.createElement('fieldset');
+
+    const text = document.createElement('span');
+    text.className = 'item-text';
+    if (item.intro) {
+      const intro = document.createElement('span');
+      intro.className = 'cal-intro';
+      intro.textContent = item.intro;
+      text.appendChild(intro);
+    }
+    if (item.quote) {
+      const quote = document.createElement('span');
+      quote.className = 'cal-quote';
+      quote.textContent = item.quote;
+      text.appendChild(quote);
+    }
+    const question = document.createElement('span');
+    question.className = 'cal-question';
+    question.textContent = item.text;
+    text.appendChild(question);
+
+    fs.appendChild(questionLegend(idx, text));
+
+    const opts = document.createElement('div');
+    opts.className = 'cal-opts';
+
+    item.options.forEach(function (opt) {
+      const label = document.createElement('label');
+      label.className = 'cal-opt';
+
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = 'c_' + item.id;
+      input.value = opt.id;
+      if (given) {
+        input.disabled = true;
+        if (given.choiceId === opt.id) {
           input.checked = true;
           label.classList.add('is-selected');
         }
+      }
 
-        const numSpan = document.createElement('span');
-        numSpan.className = 'opt-num';
-        numSpan.textContent = s.value;
+      const mark = document.createElement('span');
+      mark.className = 'cal-mark';
+      mark.setAttribute('aria-hidden', 'true');
 
-        const txtSpan = document.createElement('span');
-        txtSpan.className = 'opt-txt';
-        txtSpan.textContent = s.label;
+      const txt = document.createElement('span');
+      txt.className = 'cal-txt';
+      txt.textContent = opt.text;
 
-        label.appendChild(input);
-        label.appendChild(numSpan);
-        label.appendChild(txtSpan);
-        opts.appendChild(label);
-      });
-
-      fs.appendChild(opts);
-
-      const flag = document.createElement('p');
-      flag.className = 'item-flag';
-      flag.appendChild(icon('i-circle-alert'));
-      flag.appendChild(document.createElement('span')).textContent = 'Risposta mancante';
-      flag.hidden = true;
-      fs.appendChild(flag);
-
-      li.appendChild(fs);
-      el.itemList.appendChild(li);
-
-      if (session.answers.has(item.id)) li.classList.add('is-answered');
+      label.appendChild(input);
+      label.appendChild(mark);
+      label.appendChild(txt);
+      opts.appendChild(label);
     });
 
+    fs.appendChild(opts);
+    fs.appendChild(missingFlag());
+
+    const locked = document.createElement('p');
+    locked.className = 'cal-locked';
+    locked.appendChild(icon('i-lock'));
+    locked.appendChild(document.createElement('span')).textContent =
+      'Risposta registrata: non è modificabile.';
+    locked.hidden = !given;
+    fs.appendChild(locked);
+
+    li.appendChild(fs);
+    if (given) li.classList.add('is-answered');
+    return li;
+  }
+
+  function renderItems() {
+    el.itemList.innerHTML = '';
+    session.list.forEach(function (entry, idx) {
+      el.itemList.appendChild(
+        entry.kind === 'cal' ? calCard(entry.item, idx) : scaleCard(entry.item, idx));
+    });
     updateProgress();
   }
 
-  function updateProgress() {
-    const n = session.answers.size;
-    el.answered.textContent = n;
-    el.progress.style.width = (n / TOTAL_ITEMS * 100) + '%';
+  /** Vero se la domanda in quella posizione della lista ha già una risposta. */
+  function isAnswered(entry) {
+    return entry.kind === 'cal'
+      ? session.calAnswers.has(entry.item.id)
+      : session.answers.has(entry.item.id);
   }
 
-  /** Evidenzia inline gli item senza risposta e restituisce i loro indici (1-based). */
+  function updateProgress() {
+    const n = session.answers.size + session.calAnswers.size;
+    el.answered.textContent = n;
+    el.progress.style.width = (n / TOTAL_QUESTIONS * 100) + '%';
+  }
+
+  /** Evidenzia inline le domande senza risposta e restituisce i loro indici (1-based). */
   function markMissing() {
     const missing = [];
-    session.items.forEach(function (item, idx) {
+    session.list.forEach(function (entry, idx) {
       const li = document.getElementById('item-' + (idx + 1));
-      const answered = session.answers.has(item.id);
+      const answered = isAnswered(entry);
       const flag = li.querySelector('.item-flag');
       li.classList.toggle('is-missing', session.validated && !answered);
       li.classList.toggle('is-answered', answered);
@@ -270,7 +429,7 @@
     body.appendChild(strong);
 
     const p = document.createElement('span');
-    p.textContent = 'Completa gli item evidenziati: ';
+    p.textContent = 'Completa le domande evidenziate: ';
     body.appendChild(p);
 
     const ul = document.createElement('ul');
@@ -279,7 +438,7 @@
       const li = document.createElement('li');
       const a = document.createElement('a');
       a.href = '#item-' + n;
-      a.textContent = 'Item ' + n;
+      a.textContent = 'Domanda ' + n;
       li.appendChild(a);
       ul.appendChild(li);
     });
@@ -382,14 +541,56 @@
 
     // Recap risposte
     el.recap.innerHTML = '';
-    session.items.forEach(function (item) {
+    // Riepilogo di tutte le 16 domande nell'ordine in cui sono state mostrate.
+    // Sulle domande a scelta multipla compare la risposta data, non se fosse
+    // quella corretta: l'esito è materiale del facilitatore.
+    session.list.forEach(function (entry, idx) {
+      const item = entry.item;
       const li = document.createElement('li');
-      const score = document.createElement('span');
-      score.className = 'recap-score';
-      score.textContent = session.answers.get(item.id);
+
+      const badge = document.createElement('span');
+      badge.className = 'recap-score';
+
       const txt = document.createElement('span');
-      txt.textContent = 'Sono in grado di ' + lowerFirst(item.text);
-      li.appendChild(score);
+
+      if (entry.kind === 'cal') {
+        li.className = 'recap-cal';
+        badge.classList.add('is-cal');
+        badge.textContent = '–';   // non ha un punteggio: è l'altro asse
+        badge.title = 'Domanda a scelta multipla: non entra nel punteggio.';
+
+        const given = session.calAnswers.get(item.id);
+        const chosen = given
+          ? item.options.filter(function (o) { return o.id === given.choiceId; })[0]
+          : null;
+
+        if (item.intro) {
+          const intro = document.createElement('span');
+          intro.className = 'recap-intro';
+          intro.textContent = item.intro;
+          txt.appendChild(intro);
+        }
+        if (item.quote) {
+          const quote = document.createElement('span');
+          quote.className = 'recap-quote';
+          quote.textContent = item.quote;
+          txt.appendChild(quote);
+        }
+
+        const q = document.createElement('span');
+        q.className = 'recap-q';
+        q.textContent = item.text;
+        const a = document.createElement('span');
+        a.className = 'recap-a';
+        a.textContent = 'La tua risposta: ' + (chosen ? chosen.text : '—');
+        txt.appendChild(q);
+        txt.appendChild(a);
+      } else {
+        badge.textContent = session.answers.get(item.id);
+        txt.textContent = 'Sono in grado di ' + lowerFirst(item.text);
+      }
+
+      li.appendChild(badge);
       li.appendChild(txt);
       el.recap.appendChild(li);
     });
@@ -453,12 +654,36 @@
     el.saveStatus.appendChild(document.createElement('span')).textContent = SAVE_LABELS[state] || state;
   }
 
-  /** Righe risposta nel formato atteso dal DB. */
+  /** Righe risposta nel formato atteso dal DB. La posizione è quella nella
+   *  lista mostrata, che ora contiene anche gli item di calibrazione. */
   function answerRows() {
     const rows = [];
-    session.items.forEach(function (item, idx) {
+    session.items.forEach(function (item) {
       if (session.answers.has(item.id)) {
-        rows.push({ itemId: item.id, dim: item.dim, value: session.answers.get(item.id), position: idx + 1 });
+        rows.push({
+          itemId: item.id,
+          dim: item.dim,
+          value: session.answers.get(item.id),
+          position: positionOf(item.id)
+        });
+      }
+    });
+    return rows;
+  }
+
+  /** Righe di calibrazione già date, nel formato atteso dal DB. */
+  function calRows() {
+    const rows = [];
+    session.calItems.forEach(function (item) {
+      const given = session.calAnswers.get(item.id);
+      if (given) {
+        rows.push({
+          itemId: item.id,
+          dim: item.dim,
+          choiceId: given.choiceId,
+          correct: given.correct,
+          position: positionOf(item.id)
+        });
       }
     });
     return rows;
@@ -467,7 +692,10 @@
   /** Nuova compilazione: estrae gli item, azzera lo stato e apre la riga sessione sul DB. */
   function startSession() {
     session.items = drawItems();
+    session.calItems = drawCalItems();
+    session.list = buildList(session.items, session.calItems);
     session.answers.clear();
+    session.calAnswers.clear();
     session.validated = false;
     session.dbId = null;
     clearValidation();
@@ -476,13 +704,20 @@
 
     if (!DB.configured || !participant || !participant.id) return;
 
-    DB.createSession(participant.id, session.items.map(function (it) { return it.id; }))
+    DB.createSession(
+      participant.id,
+      session.items.map(function (it) { return it.id; }),
+      session.calItems.map(function (it) { return it.id; })
+    )
       .then(function (row) {
         if (!row) return;
         session.dbId = row.id;
         // Le risposte date prima che la riga esistesse vanno recuperate.
         const pending = answerRows();
         if (pending.length) DB.saveAllAnswers(session.dbId, pending);
+        calRows().forEach(function (c) {
+          DB.saveCalibration(session.dbId, c).catch(function () { /* segnalato dallo stato */ });
+        });
       })
       .catch(function () { /* lo stato "non salvato" è già segnalato dal client */ });
   }
@@ -556,7 +791,10 @@
 
   el.form.addEventListener('change', function (e) {
     const input = e.target;
-    if (!input.name || input.name.indexOf('q_') !== 0) return;
+    if (!input.name) return;
+
+    if (input.name.indexOf('c_') === 0) { onCalibrationChoice(input); return; }
+    if (input.name.indexOf('q_') !== 0) return;
 
     const itemId = input.name.slice(2);
     const value = parseInt(input.value, 10);
@@ -573,11 +811,48 @@
     else input.closest('.item').classList.add('is-answered');
 
     if (session.dbId) {
-      const position = session.items.findIndex(function (it) { return it.id === itemId; }) + 1;
-      const item = session.items[position - 1];
-      DB.queueAnswer(session.dbId, { itemId: itemId, dim: item.dim, value: value, position: position });
+      const item = session.items.filter(function (it) { return it.id === itemId; })[0];
+      DB.queueAnswer(session.dbId, {
+        itemId: itemId, dim: item.dim, value: value, position: positionOf(itemId)
+      });
     }
   });
+
+  /** Scelta su un item di calibrazione: si registra una volta sola, le opzioni
+   *  si bloccano e al partecipante non viene detto se ha risposto correttamente. */
+  function onCalibrationChoice(input) {
+    const itemId = input.name.slice(2);
+    if (session.calAnswers.has(itemId)) return;
+
+    const item = session.calItems.filter(function (it) { return it.id === itemId; })[0];
+    if (!item) return;
+
+    const chosen = item.options.filter(function (o) { return o.id === input.value; })[0];
+    const given = { choiceId: input.value, correct: Boolean(chosen && chosen.correct) };
+    session.calAnswers.set(itemId, given);
+
+    const li = input.closest('.item');
+    li.classList.add('is-locked', 'is-answered');
+    li.querySelectorAll('.cal-opt').forEach(function (opt) {
+      opt.classList.toggle('is-selected', opt.contains(input));
+      opt.querySelector('input').disabled = true;
+    });
+    const locked = li.querySelector('.cal-locked');
+    if (locked) locked.hidden = false;
+
+    updateProgress();
+    if (session.validated) showValidation(markMissing());
+
+    if (session.dbId) {
+      DB.saveCalibration(session.dbId, {
+        itemId: itemId,
+        dim: item.dim,
+        choiceId: given.choiceId,
+        correct: given.correct,
+        position: positionOf(itemId)
+      }).catch(function () { /* segnalato dallo stato di salvataggio */ });
+    }
+  }
 
   el.form.addEventListener('submit', function (e) {
     e.preventDefault();
@@ -610,6 +885,14 @@
 
     DB.saveAllAnswers(session.dbId, answerRows())
       .then(function () {
+        // Reinvio idempotente: se una scrittura di calibrazione era andata
+        // perduta, questa è l'ultima occasione — dopo la chiusura la funzione
+        // rifiuta. I duplicati vengono ignorati dal database.
+        return Promise.all(calRows().map(function (c) {
+          return DB.saveCalibration(session.dbId, c).catch(function () { return null; });
+        }));
+      })
+      .then(function () {
         return DB.completeSession(session.dbId, {
           total: scores.total,
           band: scores.band.name,
@@ -630,6 +913,8 @@
     goToRegistration();
   });
 
+  // Azzera solo la scala 1–4: le domande a scelta multipla si rispondono una
+  // volta sola, quindi restano bloccate con la risposta già registrata.
   document.getElementById('btn-reset').addEventListener('click', function () {
     session.answers.clear();
     session.validated = false;
@@ -666,5 +951,8 @@
       'Salvataggio non configurato: nome, cognome e risposte restano solo in questo browser.';
   }
 
-  session.items = drawItems(); // pronta anche se si arriva al quiz senza passare dall'intro
+  // Sessione pronta anche se si arriva al quiz senza passare dall'intro.
+  session.items = drawItems();
+  session.calItems = drawCalItems();
+  session.list = buildList(session.items, session.calItems);
 })();
