@@ -29,22 +29,13 @@
     dbId: null            // id della riga sessions su Supabase, null se non salvata
   };
 
-  /** Punti di "Come funziona" nella intro. */
-  const HOW_IT_WORKS = [
-    TOTAL_ITEMS + ' item estratti casualmente da una banca di 30.',
-    CAL_TOTAL + ' domande a scelta multipla su situazioni concrete, mescolate fra gli item: ' +
-      'si possono cambiare fino al calcolo e non entrano nel punteggio.',
-    'Sugli item della scala non ci sono risposte giuste o sbagliate: si misura la padronanza dichiarata.',
-    'Il calcolo parte solo quando tutte le risposte sono complete.',
-    'Ogni nuova sessione propone una selezione diversa di domande.'
-  ];
-
   const el = {
     views: {
       intro:    document.getElementById('view-intro'),
       register: document.getElementById('view-register'),
       quiz:     document.getElementById('view-quiz'),
-      results:  document.getElementById('view-results')
+      results:  document.getElementById('view-results'),
+      thanks:   document.getElementById('view-thanks')
     },
     registerForm:   document.getElementById('register-form'),
     firstName:      document.getElementById('first-name'),
@@ -52,15 +43,12 @@
     registerError:  document.getElementById('register-error'),
     registerSubmit: document.getElementById('register-submit'),
     registerSkip:   document.getElementById('register-skip'),
-    registerNote:   document.getElementById('register-note'),
     area:           document.getElementById('area'),
     participantChip: document.getElementById('participant-chip'),
     participantName: document.getElementById('participant-name'),
     changeParticipant: document.getElementById('change-participant'),
     saveStatus:  document.getElementById('save-status'),
     dbNotice:    document.getElementById('db-notice'),
-    introHow:    document.getElementById('intro-how'),
-    introScale:  document.getElementById('intro-scale'),
     quizScale:   document.getElementById('quiz-scale'),
     itemList:    document.getElementById('item-list'),
     form:        document.getElementById('quiz-form'),
@@ -180,16 +168,6 @@
   }
 
   /* ----------------------------------------------------------- rendering UI */
-
-  function renderHowItWorks() {
-    el.introHow.innerHTML = '';
-    HOW_IT_WORKS.forEach(function (line) {
-      const li = document.createElement('li');
-      li.appendChild(icon('i-check'));
-      li.appendChild(document.createElement('span')).textContent = line;
-      el.introHow.appendChild(li);
-    });
-  }
 
   function renderScaleLegend(target) {
     target.innerHTML = '';
@@ -1045,11 +1023,15 @@
     window.print();
   });
 
+  // Chiusura per il partecipante: i dati sono già stati salvati alla comparsa
+  // dei risultati, questo passaggio è la conferma che ha finito di guardarli.
+  document.getElementById('btn-confirm').addEventListener('click', function () {
+    showView('thanks');
+  });
+
 
   /* ---------------------------------------------------------------- avvio */
 
-  renderHowItWorks();
-  renderScaleLegend(el.introScale);
   renderScaleLegend(el.quizScale);
   renderParticipantChip();
   DB.onStatus(renderSaveStatus);
@@ -1058,8 +1040,6 @@
   // che nulla viene registrato.
   if (!DB.configured) {
     el.dbNotice.hidden = false;
-    el.registerNote.textContent =
-      'Salvataggio non configurato: nome, cognome e risposte restano solo in questo browser.';
   }
 
   loadAreas();

@@ -84,6 +84,9 @@ Segmentazione dei partecipanti su un elenco che governa il facilitatore.
   dei risultati. «Azzera le risposte» ripulisce solo la scala.
 - Nessun calcolo prima che tutte le 16 risposte siano presenti: le domande mancanti vengono
   segnalate inline (bordo, etichetta «Risposta mancante») e riepilogate con link di salto.
+- Dai risultati si chiude con **«Conferma sessione»**, che porta alla schermata di ringraziamento.
+  È solo la fine del percorso a schermo: i dati sono già stati salvati quando il profilo è comparso,
+  quindi non premerlo non perde nulla.
 
 ## Scoring
 
@@ -136,7 +139,7 @@ sul gruppo.
 ## File
 
 ```
-index.html            intro, registrazione, questionario, risultati + sprite delle icone
+index.html            intro, registrazione, questionario, risultati, conferma + sprite delle icone
 facilitatore.html     login e statistiche di gruppo
 css/style.css         design system: palette IFAB, card arrotondate, tipografia Geist
 img/logo-ifab.svg     logo IFAB nel footer; la dicitura completa è nei tracciati del file
@@ -154,7 +157,7 @@ identica nella struttura. Tutto il resto è locale.
 
 ## Salvataggio su Supabase
 
-Il flusso è: **registrazione** (nome e cognome) → questionario → risultati. I dati vengono scritti
+Il flusso è: **registrazione** (nome, cognome, area) → questionario → risultati → conferma. I dati vengono scritti
 progressivamente, così restano tracciate anche le compilazioni interrotte:
 
 | Momento | Chiamata |
